@@ -9,7 +9,7 @@ May 2016
 All Rights Reserved
 """
 
-version = "v226"
+version = "v227"
 """
 -- 223 added laptop kiosk functionalities
 --123 added printer kiosk functionalities
@@ -33,7 +33,7 @@ check file on laptop machine....added some functionality for checking both MS db
 """
 #import calls
 import SocketServer #ability to open a socket and listen
-import json, MySQLdb #use saved data 
+import csv, json, MySQLdb #use saved data 
 import os, sys #standard OS functions
 import threading, signal #thread spawning and killing
 import datetime, time #time functions and handling
@@ -71,7 +71,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		self.incoming = (self.request.recv(1024)).split() #receive into a buffer
 		recvFrom = "received packet from: {}".format(self.client_address[0])
 		logger.info("%s",recvFrom)
-		self.process(self.incoming)
+		self.process(self.incoming,self.client_address[0])
 	
 	def CheckMachine(self, machine):
 		availableMachines = envisionSS.envisionDB.getMachines()
@@ -93,7 +93,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		returnInfo = []
 		#replyInfo = '|'.join([userInfo[4],userInfo[5]]) #join  Major and Class level for logging purposes
 		logger.debug("SUSPENDED = %s",userInfo[6])
-		print userInfo[6]
+		#print userInfo[6]
 		if userInfo[6] == 1:
 		#user is suspended
 			logger.info("USER is suspended")
@@ -474,8 +474,27 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			returnInfo.append(errorMsg)
 		return returnInfo
 	
+	
+	def updateClientDict(self,machine,clientIP):
+		clientDict[machine]=clientIP
+		logger.info("%s written to hosts file with IP %s",machine,clientIP)
+		hostsFile = "/etc/hosts"
+		#print machine, clientIP
+		if os.path.isfile(hostsFile):
+		#check that the password file exists
+			with open(hostsFile,'wb') as writeFile:
+				ipWriter = csv.writer(writeFile,delimiter="\t",lineterminator="\n")
+				for key,value in clientDict.items():
+					ipWriter.writerow([value,key])
+			logger.info("hostFile saved successfully")
+		else:
+			try:
+				raise OSError ('\"HOSTFILE\" File is Corrupt or Missing')
+			except OSError as error:
+				logger.critical("hostFile does not exist %s", error)
+	
 	#process the packet from handle()
-	def process(self, packet):
+	def process(self, packet, clientIP):
 		#incoming packet structure: EVENT, MACHINE, USER, INFO
 		#reply packet structure: EVENT, OK/DENY, INFO
 		logger.info("Packet contains %s",packet)
@@ -483,6 +502,10 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		machine = packet[1]
 		user = packet[2]
 		info = packet[3].split("|")
+		if machine in clientDict and clientIP == clientDict[machine]:
+			pass
+		else:
+			self.updateClientDict(machine,clientIP)
 		#envisionSS.connectDB("envision") #connect to the envision db
 		reply=[]
 		reply.append(command)#add the event to the reply
@@ -536,7 +559,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 						else:
 							reply.extend(self.ConnectMachine(machine))
 
-					elif command == "EVT_STATUS":
+					elif command == "EVT_CHANGE_STATUS":
 					#switch in and out of maintenance mode
 						reply.extend(self.ChangeStatus(machine, info[0]))
 						
@@ -701,7 +724,8 @@ class TimerThread(threading.Thread):
 			relayNum = 2
 		ssh = paramiko.SSHClient() #open the tunnel
 		ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy()) #accept the host key (security risk, but there aren't any untrusted clients on this LAN
-		cmd = 'gpio -g write $'+self.machineValues[1]+' '+ command + '\n' #modify the gpio pin
+		#cmd = 'gpio -g write $'+self.machineValues[1]+' '+ command + '\n' #modify the gpio pin
+		cmd = 'echo ' + command + ' > /sys/class/gpio/gpio$' + self.machineValues[1] + '/value\n'
 		logger.debug("Sending %s to %s",cmd,socketPi)
 		try:
 			ssh.connect(socketPi,username=envisionSS.envisionDB.username,password=envisionSS.envisionDB.password)
@@ -1126,7 +1150,7 @@ def closeUp(msg,event):
 #function to close the socket and terminate all active threads
 #threads terminate without turning off the relays
 	envisionSS.envisionDB.connectDB()
-	envisionSS.envisionDB.stopThreads() #stop the threads but keep the relays on
+	#envisionSS.envisionDB.stopThreads() #stop the threads but keep the relays on
 	envisionSS.envisionDB.closeDB()
 	server.shutdown()
 	
@@ -1148,6 +1172,12 @@ if __name__ == "__main__":
 	doneEvent = threading.Event()
 	signal.signal(signal.SIGTERM, terminate)
 	envisionSS=EnvisionServer()
+	clientDict = {}
+	with open("/etc/hosts",'r') as hostsFile:
+		ipReader = csv.reader(hostsFile,delimiter='\t')
+		for hosts in ipReader:
+			clientDict[hosts[1]]=hosts[0]
+	#print clientDict
 	HOST, PORT = "192.168.111.111", 6969
 	#HOST, PORT = "192.168.111.111", 9000
 	SocketServer.TCPServer.allow_reuse_address = True #just in case the port wasn't closed properly...doesn't always work
@@ -1164,7 +1194,7 @@ if __name__ == "__main__":
 	server.daemon = True
 	
 	envisionSS.envisionDB.connectDB()
-	envisionSS.envisionDB.restartThreads() #restart any threads that were shutdown on last termination
+	#envisionSS.envisionDB.restartThreads() #restart any threads that were shutdown on last termination
 	envisionSS.envisionDB.closeDB()
 	try:
 		server.serve_forever()

@@ -979,7 +979,7 @@ class MainWindow(wx.Frame):
 
 			self.userIDnumber = idString #set the current user to this ID string
 			#print self.userIDnumber
-			self.socketWorker.sendEvent(["EVT_CHECKID",machineName,self.userIDnumber,"False"]) #check the ID record on the server
+			self.socketWorker.sendEvent(["EVT_CHECKID",machineName,self.userIDnumber,"True"]) #check the ID record on the server
 		else:
 			return
 

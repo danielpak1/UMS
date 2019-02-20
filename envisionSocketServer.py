@@ -9,7 +9,7 @@ May 2016
 All Rights Reserved
 """
 
-version = "v227"
+version = "v228"
 """
 -- 223 added laptop kiosk functionalities
 --123 added printer kiosk functionalities
@@ -502,10 +502,6 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		machine = packet[1]
 		user = packet[2]
 		info = packet[3].split("|")
-		if machine in clientDict and clientIP == clientDict[machine]:
-			pass
-		else:
-			self.updateClientDict(machine,clientIP)
 		#envisionSS.connectDB("envision") #connect to the envision db
 		reply=[]
 		reply.append(command)#add the event to the reply
@@ -531,6 +527,11 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 					reply.extend(("ERROR","DENY","BADMACHINE"))
 				else:
 					if command =="EVT_CHECKID":
+						if info[0] == "TRUE":
+							if machine in clientDict and clientIP == clientDict[machine]:
+								pass
+							else:
+								self.updateClientDict(machine,clientIP)
 						reply.extend(self.CheckID(machine, user))
 					elif command == "EVT_CONNECT":
 					#Event called when a machine first starts and connects to the socket
@@ -1150,7 +1151,7 @@ def closeUp(msg,event):
 #function to close the socket and terminate all active threads
 #threads terminate without turning off the relays
 	envisionSS.envisionDB.connectDB()
-	#envisionSS.envisionDB.stopThreads() #stop the threads but keep the relays on
+	envisionSS.envisionDB.stopThreads() #stop the threads but keep the relays on
 	envisionSS.envisionDB.closeDB()
 	server.shutdown()
 	
@@ -1194,7 +1195,7 @@ if __name__ == "__main__":
 	server.daemon = True
 	
 	envisionSS.envisionDB.connectDB()
-	#envisionSS.envisionDB.restartThreads() #restart any threads that were shutdown on last termination
+	envisionSS.envisionDB.restartThreads() #restart any threads that were shutdown on last termination
 	envisionSS.envisionDB.closeDB()
 	try:
 		server.serve_forever()

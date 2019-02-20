@@ -874,7 +874,7 @@ class MainWindow(wx.Frame):
 					idString = idString + idChars[i]
 
 			self.userIDnumber = idString #set the current user to this ID string
-			self.socketWorker.sendEvent(["EVT_CHECKID",MACHINENAME,self.userIDnumber,"False"]) #check the ID record on the server
+			self.socketWorker.sendEvent(["EVT_CHECKID",MACHINENAME,self.userIDnumber,"True"]) #check the ID record on the server
 		else:
 			self.SetFocus()
 			return
@@ -1521,7 +1521,7 @@ class PrinterFrame(wx.Frame):
 					self.socketWorker.sendEvent(["EVT_SETUP",MACHINENAME,"False",machine])
 				self.HideSelf()
 			else:
-				self.socketWorker.sendEvent(["EVT_SETUP","PRINTER_KIOSK","False",machine])
+				self.socketWorker.sendEvent(["EVT_SETUP",MACHINENAME,"False",machine])
 				self.HideSelf()
 			return
 		
@@ -1567,7 +1567,7 @@ class PrinterFrame(wx.Frame):
 					if infoList[1] == "ADMIN":
 						#wx.MessageBox("Maintenance Mode ENABLED for 30 minutes","SUCCESS")
 						message = "Maintenance Mode ENABLED for 30 minutes"
-						app.frame.socketWorker.sendEvent(["EVT_SETUP","PRINTER_KIOSK","False",machine])
+						app.frame.socketWorker.sendEvent(["EVT_SETUP",MACHINENAME,"False",machine])
 						#app.adminFrame.inputFrame.onClose(wx.EVT_BUTTON)
 						for machineNum, button in enumerate(app.frame.bitmap_buttons):
 							machineName = button.sizer.GetStaticBox().GetLabel()

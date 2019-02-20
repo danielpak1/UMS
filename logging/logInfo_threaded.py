@@ -7,6 +7,19 @@ import xlwt
 import wx.lib.mixins.inspection
 
 PASSFILE = '/home/e4ms/job_tracking/passList.txt'
+
+if os.path.isfile(PASSFILE):
+#check that the password file exists
+	with open(PASSFILE,'r') as dataFile:
+	#load the json file into a dict
+		PASSDICT = json.load(dataFile) # load json info into a list of dicts
+else:
+	try:
+		raise OSError ('\"PassList\" File is Corrupt or Missing')
+	except OSError as error:
+		print error
+		sys.exit(1)
+
 """
 Todo: need to add calendar limits
 need to add weekly data option (using datetime...probably)
@@ -83,8 +96,8 @@ class DatabaseHandler():
 	def __init__(self,parent):
 		self.db = None
 		self.cur = None
-		self.username = app.passDict["reports-user"]
-		self.password = app.passDict["reports-pass"]
+		self.username = PASSDICT["reports-user"]
+		self.password = PASSDICT["reports-pass"]
 		self.host = "envision-local.ucsd.edu"
 		self.port = 3306
 		self.database = "envision_control"
@@ -191,21 +204,21 @@ class MyFrame(wx.Frame):
 		wx.Frame.__init__(self, *args, **kwds)
 		self.panel_1 = wx.Panel(self, wx.ID_ANY)
 		self.userBox = wx.ComboBox(self.panel_1, wx.ID_ANY, choices=["DISTINCT","ALL"], style=wx.CB_DROPDOWN | wx.TE_PROCESS_ENTER)
-		self.majorListBox = wx.CheckListBox(self.panel_1, wx.ID_ANY, choices=[_("c"), _("a"), _("b"), _("d")], style=wx.LB_ALWAYS_SB | wx.LB_MULTIPLE, size=size )
-		self.allButton_1 = wx.Button(self.panel_1, wx.ID_ANY, _("ALL"))
+		self.majorListBox = wx.CheckListBox(self.panel_1, wx.ID_ANY, choices=[("c"), ("a"),("b"),("d")], style=wx.LB_ALWAYS_SB | wx.LB_MULTIPLE, size=size )
+		self.allButton_1 = wx.Button(self.panel_1, wx.ID_ANY, ("ALL"))
 		self.allButton_1.cat = "MAJOR"
-		self.clearButton_1 = wx.Button(self.panel_1, wx.ID_ANY, _("CLEAR"))
+		self.clearButton_1 = wx.Button(self.panel_1, wx.ID_ANY, ("CLEAR"))
 		self.clearButton_1.cat = "MAJOR"
-		self.allButton_2 = wx.Button(self.panel_1, wx.ID_ANY, _("ALL"))
+		self.allButton_2 = wx.Button(self.panel_1, wx.ID_ANY, ("ALL"))
 		self.allButton_2.cat = "LEVEL"
-		self.clearButton_2 = wx.Button(self.panel_1, wx.ID_ANY, _("CLEAR"))
+		self.clearButton_2 = wx.Button(self.panel_1, wx.ID_ANY, ("CLEAR"))
 		self.clearButton_2.cat = "LEVEL"
-		self.allButton_3 = wx.Button(self.panel_1, wx.ID_ANY, _("ALL"))
+		self.allButton_3 = wx.Button(self.panel_1, wx.ID_ANY, ("ALL"))
 		self.allButton_3.cat = "MACHINE"
-		self.clearButton_3 = wx.Button(self.panel_1, wx.ID_ANY, _("CLEAR"))
+		self.clearButton_3 = wx.Button(self.panel_1, wx.ID_ANY, ("CLEAR"))
 		self.clearButton_3.cat = "MACHINE"
-		self.levelListBox = wx.CheckListBox(self.panel_1, wx.ID_ANY, choices=[_("c"), _("a"), _("b"), _("d")], style=wx.LB_ALWAYS_SB | wx.LB_MULTIPLE , size=size)
-		self.machineListBox = wx.CheckListBox(self.panel_1, wx.ID_ANY, choices=[_("c"), _("a"), _("b"), _("d")], style=wx.LB_ALWAYS_SB | wx.LB_MULTIPLE , size=size)
+		self.levelListBox = wx.CheckListBox(self.panel_1, wx.ID_ANY, choices=[("c"),("a"), ("b"), ("d")], style=wx.LB_ALWAYS_SB | wx.LB_MULTIPLE , size=size)
+		self.machineListBox = wx.CheckListBox(self.panel_1, wx.ID_ANY, choices=[("c"), ("a"), ("b"), ("d")], style=wx.LB_ALWAYS_SB | wx.LB_MULTIPLE , size=size)
 		
 		self.startCheckbox = wx.CheckBox(self.panel_1, wx.ID_ANY, "")
 		self.startDate = wx.GenericDatePickerCtrl(self.panel_1, size=(120,-1),style = wx.DP_DROPDOWN)
@@ -220,9 +233,9 @@ class MyFrame(wx.Frame):
 		self.hourBox = wx.CheckBox(self.panel_1, wx.ID_ANY, "HOURLY DATA")
 		self.weeklyBox = wx.CheckBox(self.panel_1, wx.ID_ANY, "WEEKLY DATA")
 		self.timedBox = wx.CheckBox(self.panel_1,wx.ID_ANY,"TIMED DATA")
-		self.runButton = wx.Button(self.panel_1, wx.ID_ANY, _(" RUN "))
+		self.runButton = wx.Button(self.panel_1, wx.ID_ANY, (" RUN "))
 		self.appendBox = wx.CheckBox(self.panel_1, wx.ID_ANY, "APPEND REPORTS")
-		self.exportButton = wx.Button(self.panel_1, wx.ID_ANY, _("EXPORT"))
+		self.exportButton = wx.Button(self.panel_1, wx.ID_ANY, ("EXPORT"))
 		self.exportButton.Disable()
 		
 		self.notebook = TestNB(self.panel_1,wx.ID_ANY)
@@ -694,18 +707,6 @@ class MyFrame(wx.Frame):
 # end of class MyFrame
 class MyApp(wx.App):
 	def OnInit(self):
-		if os.path.isfile(PASSFILE):
-		#check that the password file exists
-			with open(PASSFILE,'r') as dataFile:
-			#load the json file into a dict
-				self.passDict = json.load(dataFile) # load json info into a list of dicts
-		else:
-			try:
-				raise OSError ('\"PassList\" File is Corrupt or Missing')
-			except OSError as error:
-				print error
-				sys.exit(1)
-		
 		self.frame = MyFrame(None, wx.ID_ANY, "")
 		self.SetTopWindow(self.frame)
 		self.frame.Show()

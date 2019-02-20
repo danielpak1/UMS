@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 
-import wx, threading, csv, os
-from wx.lib.pubsub import pub 
+import wx, threading, csv, os, sys, select
 import subprocess, time, datetime
 
 #platform check, useful for GUI layout
@@ -55,6 +54,27 @@ class PingThread(threading.Thread):
 	#Set the run flag to end the thread. Usefull for terminating a thread from somewhere else
 		self.runFlag = False
 
+class LogThread(threading.Thread):
+	def __init__(self):
+		threading.Thread.__init__(self)
+		self.runFlag = True
+	def run(self):
+		fileName = '/var/log/envision/socketServer.log'
+		result = subprocess.Popen(['tail','-F',fileName],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+		polled = select.poll()
+		polled.register(result.stdout)
+
+		while self.runFlag:
+			if polled.poll(1):
+				wx.CallAfter(app.frame.updateLog, result.stdout.readline())	
+		#result = subprocess.check_output(['tail','-F',fileName])
+		#result = subprocess.Popen(['tail','-F',fileName],stdout=subprocess.PIPE)
+		#logOutput, err = result.communicate()
+		#print result
+	def stop(self):
+		self.runFlag = False
+
+
 class MainWindow(wx.Frame):
 	def __init__(self):
 		styleFlags = wx.DEFAULT_FRAME_STYLE# | wx.NO_BORDER# | wx.FRAME_NO_TASKBAR
@@ -62,6 +82,10 @@ class MainWindow(wx.Frame):
 			styleFlags = wx.DEFAULT_FRAME_STYLE# | wx.STAY_ON_TOP
 		wx.Frame.__init__(self, None, title = "EnVision Client Machines", style=styleFlags)
 		self.panel_1 = wx.Panel(self, wx.ID_ANY)
+		self.panel_2 = wx.Panel(self, wx.ID_ANY)
+		logstyle = wx.TE_MULTILINE|wx.TE_READONLY
+		self.log = wx.TextCtrl(self.panel_2, wx.ID_ANY, style=logstyle)
+		self.logSizer = wx.BoxSizer(wx.VERTICAL)
 		self.sizer4 = wx.BoxSizer(wx.VERTICAL)
 		self.grid_sizer1 = wx.GridSizer(app.grids, app.grids, app.grid_gap, app.grid_gap)
 		self.infoSizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -112,6 +136,14 @@ class MainWindow(wx.Frame):
 		self.__do_layout()
 		#start a oneshot one minute timer
 		self.pingTimer.Start(5000,oneShot=True)
+		self.logWorker = LogThread()
+		self.logWorker.start()
+		sys.stdout = self.log
+		sys.stderr = self.log
+	
+	def updateLog(self,logInfo):
+		self.log.AppendText(logInfo)
+	
 	def updateFromThread(self,machine):
 		if machine.status=="UP":
 			machine.SetBitmap(app.bitmaps["machineUp"])
@@ -129,7 +161,6 @@ class MainWindow(wx.Frame):
 		else:
 			self.pingNum+=1
 	def ping(self,event):
-		print "in timer"
 		with open("/etc/hosts",'r') as hostsFile:
 			ipReader = csv.reader(hostsFile,delimiter='\t')
 			for hosts in ipReader:
@@ -184,11 +215,16 @@ class MainWindow(wx.Frame):
 			light.sizer.Add(light.machineName,0,wx.CENTER)
 			self.grid_sizer1.Add(light.sizer, 1, wx.ALL | wx.EXPAND, app.gridSizerBorder)
 		self.panel_1.SetSizer(self.grid_sizer1)
-		self.sizer4.Add(self.panel_1, 1, wx.EXPAND, 0)
+		self.sizer4.Add(self.panel_1, 2, wx.EXPAND, 0)
 		self.infoSizer.AddStretchSpacer(prop=1)
 		self.infoSizer.Add(self.updateText,0,wx.EXPAND | wx.ALIGN_CENTER | wx.ALIGN_CENTER_HORIZONTAL | wx.CENTRE)
 		self.infoSizer.AddStretchSpacer(prop=1)
 		self.sizer4.Add(self.infoSizer,0,wx.TOP | wx.BOTTOM | wx.EXPAND,10)
+		#self.panel_2.SetSizer(self.sizer5)
+		
+		self.logSizer.Add(self.log, 1, wx.ALIGN_CENTER| wx.EXPAND, 0)
+		self.panel_2.SetSizer(self.logSizer)
+		self.sizer4.Add(self.panel_2,1,wx.EXPAND,0)
 		self.SetSizer(self.sizer4)
 		self.sizer4.Fit(self)
 		self.SetMinSize((650,500))
@@ -200,7 +236,7 @@ class MyApp(wx.App):
 		self.grid_gap = 5
 		self.grids = 4
 		self.printerFontSize = 10
-		self.buttonSize = 60
+		self.buttonSize = 90
 		self.__set_bitmaps__()
 		return True
 	

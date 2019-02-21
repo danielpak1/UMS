@@ -9,7 +9,7 @@ May 2016
 All Rights Reserved
 """
 
-version = "v228"
+version = "v229"
 """
 -- 223 added laptop kiosk functionalities
 --123 added printer kiosk functionalities
@@ -71,7 +71,17 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		self.incoming = (self.request.recv(1024)).split() #receive into a buffer
 		recvFrom = "received packet from: {}".format(self.client_address[0])
 		logger.info("%s",recvFrom)
-		self.process(self.incoming,self.client_address[0])
+		try:
+			self.process(self.incoming,self.client_address[0])
+		except Exception:
+			logger.exception("Fatal error in server.process()")
+			eventInfo = self.incoming[3].split("|") #break out the info message
+			eventInfo.append(self.incoming[1]) # append the machine name to any info
+			eventInfo.append(self.incoming[2]) #append the user to any info
+			self.incoming[3] = "|".join(eventInfo) #recombine with a pipe character
+			self.incoming[1]="DBERROR" #packet now looks like ["EVENT", "DBERROR", "INFO|MACHINE|USER"]
+			logger.info("Returning Packet: %s",self.incoming)
+			self.respond(self.incoming)
 	
 	def CheckMachine(self, machine):
 		availableMachines = envisionSS.envisionDB.getMachines()
@@ -635,14 +645,12 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		#envisionSS.oecDB.closeDB()
 	def respond (self, packet):
 	#respond to client
-		i = 0
-		for str in packet:
+		for i,str in enumerate(packet):
 		#replace all spaces with an underscore (helps with string managment on client side)
 			#print str
 			packet[i]=str.replace(" ","_")
-			i+=1
-		packetStr = (" ".join(packet)).upper() #convert everything to uppercase
-		logger.info("Replied %s", packet)
+		packetStr = (" ".join(packet)).upper() #convert list to string, space delimited, and everything to uppercase
+		logger.info("Replied %s", packetStr)
 		self.request.sendall(packetStr)
 
 #class to create and control the threaded print timers

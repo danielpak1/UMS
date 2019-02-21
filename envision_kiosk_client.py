@@ -916,6 +916,9 @@ class MainWindow(wx.Frame):
 		elif status == "DENY":
 		#checks if the command was rejected
 			self.processDeny(event, statusInfo)
+		elif status == "DBERROR":
+		#problem with the process directive on the socketServer, this will resend the packet indefinitely (YIKES)
+			self.socketWorker.sendEvent(command,user,machine,machineTime)
 	#called after the socketlistener determines the packets were properly formed, and were accepted by the server
 	def processReply(self, command, info):
 		#function expects two strings: the command and the information returned by the server
@@ -1370,6 +1373,9 @@ class PrinterFrame(wx.Frame):
 		elif status == "DENY":
 		#checks if the command was rejected
 			self.processDeny(event, statusInfo)
+		elif status == "DBERROR":
+		#problem with the process directive on the socketServer, this will resend the packet indefinitely (YIKES)
+			self.socketWorker.sendEvent(command,user,machine,machineTime)
 
 	def setupMachines(self,machines):
 		#machineNum = 0

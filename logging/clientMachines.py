@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 
-import wx, threading, csv, os, sys, select
+import wx, threading, csv, os, sys, select,signal
 import subprocess, time, datetime
 
 #platform check, useful for GUI layout
@@ -15,6 +15,8 @@ else:
 #hardcoded number of machines, that I should probably tie to /etc/hosts
 NUMMACHINES = 16
 
+def signalINT_handler(sig,frame):
+	app.frame.OnExit(wx.EVT_CLOSE)
 #threaded instance that pings a machine and checks for a response
 #if the machine does/not reply, the GUI is updated accordingly with a CallAfter
 #output from subprocess is piped to dev/null
@@ -33,6 +35,7 @@ class PingThread(threading.Thread):
 		with open(os.devnull, 'w') as blackHole:
 			while self.runFlag:
 			#run until timer expires or kill flag is set
+				time.sleep(0.5)
 				response = subprocess.call(['ping', '-c', '1', ip],stdout=blackHole, stderr=blackHole)
 				#ping return is 0 for a success, 2 for machine didn't respond, >0 for everything else
 				if response == 0:
@@ -60,17 +63,15 @@ class LogThread(threading.Thread):
 		self.runFlag = True
 	def run(self):
 		fileName = '/var/log/envision/socketServer.log'
-		result = subprocess.Popen(['tail','-F',fileName],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-		polled = select.poll()
-		polled.register(result.stdout)
+		self.result = subprocess.Popen(['tail','-F',fileName],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+		self.polled = select.poll()
+		self.polled.register(self.result.stdout)
 
 		while self.runFlag:
-			if polled.poll(1):
-				wx.CallAfter(app.frame.updateLog, result.stdout.readline())	
-		#result = subprocess.check_output(['tail','-F',fileName])
-		#result = subprocess.Popen(['tail','-F',fileName],stdout=subprocess.PIPE)
-		#logOutput, err = result.communicate()
-		#print result
+			if self.polled.poll(1):
+				wx.CallAfter(app.frame.updateLog, self.result.stdout.readline())
+		self.polled.unregister(self.result.stdout)
+		self.result.terminate()
 	def stop(self):
 		self.runFlag = False
 
@@ -89,10 +90,13 @@ class MainWindow(wx.Frame):
 		self.sizer4 = wx.BoxSizer(wx.VERTICAL)
 		self.grid_sizer1 = wx.GridSizer(app.grids, app.grids, app.grid_gap, app.grid_gap)
 		self.infoSizer = wx.BoxSizer(wx.HORIZONTAL)
+		self.restartButton = wx.Button(self, wx.ID_ANY,"RESTART SERVER")
+		
 		updateTime = "Last Updated @ xxxx" #+ now.strftime("%H:%M")
 		self.updateText=(wx.StaticText(self,-1,updateTime,style = wx.ALIGN_CENTER_HORIZONTAL))
 		updateFont = wx.Font(12,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_ITALIC,wx.FONTWEIGHT_NORMAL)
 		self.updateText.SetFont(updateFont)
+		self.restartButton.SetFont(updateFont)
 		printerInfoFont = wx.Font(app.printerFontSize,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL)
 		self.statusLight=[]
 		self.clientDict = {}
@@ -133,13 +137,23 @@ class MainWindow(wx.Frame):
 		self.pingTimer = wx.Timer(self)
 		#and bind it to a function
 		self.Bind(wx.EVT_TIMER,self.ping,self.pingTimer)
+		self.Bind(wx.EVT_CLOSE, self.OnExit)
 		self.__do_layout()
+		self.__set_properties()
+		
 		#start a oneshot one minute timer
 		self.pingTimer.Start(5000,oneShot=True)
 		self.logWorker = LogThread()
 		self.logWorker.start()
 		sys.stdout = self.log
 		sys.stderr = self.log
+		#print "stdout"
+	
+	def OnExit(self,event):
+		for thread in threading.enumerate():
+			if (not thread.name.upper().startswith("MAIN")):
+				thread.stop()
+		self.Destroy()
 	
 	def updateLog(self,logInfo):
 		self.log.AppendText(logInfo)
@@ -153,14 +167,16 @@ class MainWindow(wx.Frame):
 			machine.SetBitmap(app.bitmaps["noMachine"])
 		machine.pingWorker = PingThread(machine)
 		self.Layout()
-		self.Refresh()
 		if self.pingNum >= len(self.clientDict)-1:
 			now = datetime.datetime.now()
 			self.updateText.SetLabel("Last Updated @ " + now.strftime("%H:%M"))
 			self.pingNum=0
+			self.Refresh()
 		else:
 			self.pingNum+=1
 	def ping(self,event):
+		self.inPing = True
+		self.restartButton.Disable()
 		with open("/etc/hosts",'r') as hostsFile:
 			ipReader = csv.reader(hostsFile,delimiter='\t')
 			for hosts in ipReader:
@@ -188,8 +204,9 @@ class MainWindow(wx.Frame):
 		for machine in self.statusLight:
 			if machine.status != None:
 				machine.pingWorker.start()
-				time.sleep(0.5)
+				#time.sleep(0.5)
 		self.pingTimer.Start(60000,oneShot=True)
+		self.restartButton.Enable()
 	def onResize(self,newSize):
 		winWidth = newSize.GetSize()[0]
 		winHeight = newSize.GetSize()[1]
@@ -204,10 +221,11 @@ class MainWindow(wx.Frame):
 		self.Layout()
 	def __set_properties(self):
 		# begin wxGlade: MyFrame.__set_properties
-		self.SetTitle(_("frame"))
-		for light in self.statusLight:
-			light.SetSize(light.GetBestSize())
-			light.SetBitmapDisabled(self.bitmaps["machineDown"])
+		self.SetTitle("EnVision Clients")
+		# for light in self.statusLight:
+			# light.SetSize(light.GetBestSize())
+			# light.SetBitmapDisabled(self.bitmaps["machineDown"])
+		self.restartButton.Bind(wx.EVT_BUTTON,self.restartServer)
 
 	def __do_layout(self):
 		for light in self.statusLight:
@@ -216,6 +234,8 @@ class MainWindow(wx.Frame):
 			self.grid_sizer1.Add(light.sizer, 1, wx.ALL | wx.EXPAND, app.gridSizerBorder)
 		self.panel_1.SetSizer(self.grid_sizer1)
 		self.sizer4.Add(self.panel_1, 2, wx.EXPAND, 0)
+		self.infoSizer.AddStretchSpacer(prop=1)
+		self.infoSizer.Add(self.restartButton,1,wx.ALIGN_CENTER|wx.EXPAND,0)
 		self.infoSizer.AddStretchSpacer(prop=1)
 		self.infoSizer.Add(self.updateText,0,wx.EXPAND | wx.ALIGN_CENTER | wx.ALIGN_CENTER_HORIZONTAL | wx.CENTRE)
 		self.infoSizer.AddStretchSpacer(prop=1)
@@ -229,6 +249,51 @@ class MainWindow(wx.Frame):
 		self.sizer4.Fit(self)
 		self.SetMinSize((650,500))
 		self.Layout()
+		
+	def restartServer(self,event):
+		agreeMessage = "\nRestart Socket Server?"
+		agreeDlg = wx.MessageDialog(self, agreeMessage, "RESTART", wx.YES | wx.NO | wx.CENTRE)
+		result = agreeDlg.ShowModal()
+		agreeDlg.Close()
+		agreeDlg.Destroy()
+		if result == wx.ID_YES:
+			response = subprocess.call(['sudo', 'systemctl', 'restart', 'envisionSocketServer.service'])#,stdout=self.log, stderr=self.log)
+			self.gaugeDialog = 	wx.Dialog(self,style= wx.STAY_ON_TOP, title = "WAITING...", size = (300,100))
+			panel = wx.Panel(self.gaugeDialog,size=(300,100))
+			dw, dh = panel.GetSize()
+			gSize = (dw-dw//10,dh//3)
+			location = (dw/2 - gSize[0]/2, dh/2 - gSize[1]/2)
+			self.gauge = wx.Gauge(panel, wx.ID_ANY, 10, size=gSize, pos=location)
+			self.gauge.SetRange(10)
+			dw, dh = wx.DisplaySize()
+			w, h = self.gaugeDialog.GetSize()
+			#x = dw/2 - w/2
+			#y = dh/2 - h/2
+			framePos = ((self.Position[0]+(self.Size[0]/2)),(self.Position[1]+(self.Size[1]/2)))
+			self.gaugeDialog.SetPosition((framePos[0]-w/2,framePos[1]-h/2))
+			self.gaugeCounter = 0
+			self.gaugeTimer = wx.Timer(self)
+			#and bind it to a function
+			self.Bind(wx.EVT_TIMER,self.GaugeSet,self.gaugeTimer)
+			self.gaugeTimer.Start(500)
+			self.gaugeDialog.ShowModal()
+			if response == 0:
+				wx.MessageBox('Successfully Restarted', 'SUCCESS', wx.OK | wx.ICON_INFORMATION)
+			else:
+				wx.MessageBox('Operation could not be completed', 'ERROR', wx.OK | wx.ICON_ERROR)
+		elif result == wx.ID_NO:
+		#no indicates the admin wants to change the printer timer
+			pass
+	def GaugeSet(self,event):
+		if self.gaugeCounter == 10:
+			self.gaugeTimer.Stop()
+			self.gaugeDialog.EndModal(0)
+			self.gaugeDialog.Destroy()
+		else:
+			self.gaugeCounter +=1
+			self.gauge.SetValue(self.gaugeCounter)
+		
+
 class MyApp(wx.App):
 	def OnInit(self):
 		self.bitmaps = {}
@@ -265,4 +330,5 @@ if __name__ == "__main__":
 	app = MyApp(0)
 	app.frame = MainWindow()
 	app.frame.Show()
+	signal.signal(signal.SIGINT,signalINT_handler)
 	app.MainLoop()

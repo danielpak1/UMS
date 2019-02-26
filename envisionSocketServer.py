@@ -51,7 +51,7 @@ handler = logging.handlers.TimedRotatingFileHandler("/var/log/envision/socketSer
 formatter=logging.Formatter("%(levelname)s:%(asctime)s:%(threadName)s:%(message)s")
 handler.setFormatter(formatter)
 logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 #logger.basicConfig(format="%(levelname)s:%(asctime)s:%(threadName)s:%(message)s", filename="/var/log/envision/socketServer.log", level=logging.INFO)
 
 
@@ -78,7 +78,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			eventInfo = self.incoming[3].split("|") #break out the info message
 			eventInfo.append(self.incoming[1]) # append the machine name to any info
 			eventInfo.append(self.incoming[2]) #append the user to any info
-			self.incoming[3] = "|".join(eventInfo) #recombine with a pipe character
+			self.incoming[2] = "|".join(eventInfo) #recombine with a pipe character
 			self.incoming[1]="DBERROR" #packet now looks like ["EVENT", "DBERROR", "INFO|MACHINE|USER"]
 			logger.info("Returning Packet: %s",self.incoming)
 			self.respond(self.incoming)
@@ -207,7 +207,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 				else:
 					logger.warning("%s not ending. Attempt %s",threadName, endCount)
 					endCount += 1
-				time.sleep(2) #wait 1 second between tries....maybe increase this if errors are happening often
+				time.sleep(5) #wait 1 second between tries....maybe increase this if errors are happening often
 			if endCount >= 5:
 			#if loop brook because of too many attempts, alert the user that the print has not stopped
 				logger.error("%s can't terminate. Ceasing attempts", threadName)
@@ -1164,13 +1164,13 @@ def closeUp(msg,event):
 	server.shutdown()
 	
 	#print debug info
-	logger.info("Server shutdown with %s message",msg)
+	logger.critical("SHUTDOWN with: %s",msg)
 	now = datetime.datetime.now()
 	event.set() #helpful for shutting down the socket with a ctrl-c command
 	return
 
 def terminate(signal,frame):
-	t = threading.Thread(target = shutdownHandler,args = ('Shut down successfully by systemd',doneEvent))
+	t = threading.Thread(target = closeUp,args = ('SUCCESS by systemd',doneEvent))
 	t.start()	
 
 
@@ -1180,6 +1180,7 @@ if __name__ == "__main__":
 #restarting requires killing the python process that has the port open
 	doneEvent = threading.Event()
 	signal.signal(signal.SIGTERM, terminate)
+	signal.signal(signal.SIGINT,terminate)
 	envisionSS=EnvisionServer()
 	clientDict = {}
 	with open("/etc/hosts",'r') as hostsFile:
@@ -1209,8 +1210,9 @@ if __name__ == "__main__":
 		server.serve_forever()
 		doneEvent.wait()
 	except KeyboardInterrupt:
-		closeUp("Shut down successfully with KeyboardInterrupt",doneEvent)
+		closeUp("SUCCESS with KeyboardInterrupt",doneEvent)
 		sys.exit(0)
-	except:
-		closeUp("Shut down successfully with unknown error",doneEvent)
+	except Exception as e:
+		logger.exception("Fatal error in __main__")
+		closeUp("ERROR with " + str(e),doneEvent)
 		sys.exit(0)

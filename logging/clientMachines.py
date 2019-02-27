@@ -43,7 +43,7 @@ class PingThread(threading.Thread):
 						self.machine.status="UP"
 					self.stop()
 				else:
-					if i>=3:
+					if i>=5:
 						if self.machine.status!="DOWN":
 							self.machine.status="DOWN"
 						self.stop()
@@ -92,11 +92,15 @@ class MainWindow(wx.Frame):
 		self.infoSizer = wx.BoxSizer(wx.HORIZONTAL)
 		self.restartButton = wx.Button(self, wx.ID_ANY,"RESTART SERVER")
 		
+		self.upTimeSeconds = 0
 		updateTime = "Last Updated @ xxxx" #+ now.strftime("%H:%M")
-		self.updateText=(wx.StaticText(self,-1,updateTime,style = wx.ALIGN_CENTER_HORIZONTAL))
+		self.updateText=(wx.StaticText(self,-1,updateTime,style = wx.ALIGN_CENTER_HORIZONTAL|wx.EXPAND))
 		updateFont = wx.Font(12,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_ITALIC,wx.FONTWEIGHT_NORMAL)
+		self.upTimeText=(wx.StaticText(self,-1,"xx-xx:xx:xx",style=wx.ALIGN_CENTER_HORIZONTAL|wx.EXPAND))
+		
 		self.updateText.SetFont(updateFont)
 		self.restartButton.SetFont(updateFont)
+		self.upTimeText.SetFont(updateFont)
 		printerInfoFont = wx.Font(app.printerFontSize,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL)
 		self.statusLight=[]
 		self.clientDict = {}
@@ -137,18 +141,37 @@ class MainWindow(wx.Frame):
 		self.pingTimer = wx.Timer(self)
 		#and bind it to a function
 		self.Bind(wx.EVT_TIMER,self.ping,self.pingTimer)
+		
+		self.systemUp = False
+		self.upTimer = wx.Timer(self)
+		self.Bind(wx.EVT_TIMER,self.updateUptime,self.upTimer)
+		
 		self.Bind(wx.EVT_CLOSE, self.OnExit)
 		self.__do_layout()
 		self.__set_properties()
 		
 		#start a oneshot one minute timer
 		self.pingTimer.Start(5000,oneShot=True)
+		self.upTimer.Start(1000)
 		self.logWorker = LogThread()
 		self.logWorker.start()
+		
 		sys.stdout = self.log
 		sys.stderr = self.log
 		#print "stdout"
 	
+	def updateUptime(self,event):
+		if self.systemUp:
+			self.upTimeSeconds +=1
+			secs=datetime.timedelta(seconds=self.upTimeSeconds)
+			converted=datetime.datetime(1,1,1) + secs
+			upStr = ("%s-%s:%s:%s" %(str(converted.day-1).zfill(2),str(converted.hour).zfill(2),str(converted.minute).zfill(2),str(converted.second).zfill(2)))
+			self.upTimeText.SetLabel(upStr)
+			
+		else:
+			self.upTimeText.SetLabel("00-00:00:00")
+			self.upTimeSeconds = 0
+		#self.upTimeText.Layout()
 	def OnExit(self,event):
 		for thread in threading.enumerate():
 			if (not thread.name.upper().startswith("MAIN")):
@@ -166,11 +189,18 @@ class MainWindow(wx.Frame):
 		else:
 			machine.SetBitmap(app.bitmaps["noMachine"])
 		machine.pingWorker = PingThread(machine)
-		self.Layout()
 		if self.pingNum >= len(self.clientDict)-1:
 			now = datetime.datetime.now()
 			self.updateText.SetLabel("Last Updated @ " + now.strftime("%H:%M"))
+			allMachinesUp = True
+			for status in self.statusLight:
+				if status.status == "DOWN":
+					self.systemUp = False
+					allMachinesUp = False
+			if allMachinesUp == True:
+				self.systemUp = True
 			self.pingNum=0
+			self.Layout()
 			self.Refresh()
 		else:
 			self.pingNum+=1
@@ -235,9 +265,11 @@ class MainWindow(wx.Frame):
 		self.panel_1.SetSizer(self.grid_sizer1)
 		self.sizer4.Add(self.panel_1, 2, wx.EXPAND, 0)
 		self.infoSizer.AddStretchSpacer(prop=1)
-		self.infoSizer.Add(self.restartButton,1,wx.ALIGN_CENTER|wx.EXPAND,0)
+		self.infoSizer.Add(self.restartButton,1,wx.ALIGN_CENTER|wx.ALIGN_CENTER_HORIZONTAL|wx.EXPAND,0)
 		self.infoSizer.AddStretchSpacer(prop=1)
-		self.infoSizer.Add(self.updateText,0,wx.EXPAND | wx.ALIGN_CENTER | wx.ALIGN_CENTER_HORIZONTAL | wx.CENTRE)
+		self.infoSizer.Add(self.updateText,1,wx.EXPAND | wx.ALIGN_CENTER | wx.ALIGN_CENTER_HORIZONTAL | wx.CENTRE)
+		self.infoSizer.AddStretchSpacer(prop=1)
+		self.infoSizer.Add(self.upTimeText,1,wx.EXPAND | wx.ALIGN_CENTER | wx.ALIGN_CENTER_HORIZONTAL | wx.CENTRE)
 		self.infoSizer.AddStretchSpacer(prop=1)
 		self.sizer4.Add(self.infoSizer,0,wx.TOP | wx.BOTTOM | wx.EXPAND,10)
 		#self.panel_2.SetSizer(self.sizer5)

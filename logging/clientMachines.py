@@ -82,84 +82,115 @@ class MainWindow(wx.Frame):
 		if GTK:
 			styleFlags = wx.DEFAULT_FRAME_STYLE# | wx.STAY_ON_TOP
 		wx.Frame.__init__(self, None, title = "EnVision Client Machines", style=styleFlags)
-		self.panel_1 = wx.Panel(self, wx.ID_ANY)
-		self.panel_2 = wx.Panel(self, wx.ID_ANY)
-		logstyle = wx.TE_MULTILINE|wx.TE_READONLY
-		self.log = wx.TextCtrl(self.panel_2, wx.ID_ANY, style=logstyle)
-		self.logSizer = wx.BoxSizer(wx.VERTICAL)
-		self.sizer4 = wx.BoxSizer(wx.VERTICAL)
-		self.grid_sizer1 = wx.GridSizer(app.grids, app.grids, app.grid_gap, app.grid_gap)
-		self.infoSizer = wx.BoxSizer(wx.HORIZONTAL)
-		self.restartButton = wx.Button(self, wx.ID_ANY,"RESTART SERVER")
-		
-		self.upTimeSeconds = 0
-		updateTime = "Last Updated @ xxxx" #+ now.strftime("%H:%M")
-		self.updateText=(wx.StaticText(self,-1,updateTime,style = wx.ALIGN_CENTER_HORIZONTAL|wx.EXPAND))
-		updateFont = wx.Font(12,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_ITALIC,wx.FONTWEIGHT_NORMAL)
-		self.upTimeText=(wx.StaticText(self,-1,"xx-xx:xx:xx",style=wx.ALIGN_CENTER_HORIZONTAL|wx.EXPAND))
-		
-		self.updateText.SetFont(updateFont)
-		self.restartButton.SetFont(updateFont)
-		self.upTimeText.SetFont(updateFont)
-		printerInfoFont = wx.Font(app.printerFontSize,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL)
 		self.statusLight=[]
 		self.clientDict = {}
-		with open("/etc/hosts",'r') as hostsFile:
-			ipReader = csv.reader(hostsFile,delimiter='\t')
-			for hosts in ipReader:
-				if hosts[0].startswith("192"):
-					self.clientDict[hosts[1]]=hosts[0]
 		self.pingNum = 0
-		clientList = []
-		for host in self.clientDict:
-			clientList.append((host,self.clientDict[host]))
-		self.sortedClients = sorted(clientList,key = lambda x: x[0].upper())
-		for i in xrange(NUMMACHINES):
-			if i < len(self.sortedClients):
-				self.statusLight.append(wx.StaticBitmap(self.panel_1, wx.ID_ANY, app.bitmaps["machineDown"], style = wx.NO_BORDER))
-				machineLabel = self.sortedClients[i][0]
-				machineIP = self.sortedClients[i][1]
-				status = "DOWN"
-			else:
-				self.statusLight.append(wx.StaticBitmap(self.panel_1, wx.ID_ANY, app.bitmaps["noMachine"], style = wx.NO_BORDER))
-				machineLabel = "---"
-				machineIP = "XXX.XXX.XXX"
-				status = None 
-			
-			this = self.statusLight[-1]
-			this.status = status
-			this.machineName = wx.StaticText(self.panel_1, label=machineLabel,style=wx.ALIGN_CENTRE_HORIZONTAL|wx.ST_NO_AUTORESIZE)
-			this.machineName.SetFont(printerInfoFont)
-			this.sizer = (wx.StaticBoxSizer(wx.StaticBox(self.panel_1, wx.ID_ANY, machineIP), wx.VERTICAL))
-			this.box = this.sizer.GetStaticBox()
-			this.pingWorker = PingThread(this)
-			#this.Bind(wx.EVT_BUTTON, self.onClick)
-		
-		
-		self.Bind(wx.EVT_SIZE,self.onResize)
-		#set the timer as a wx Timer
-		self.pingTimer = wx.Timer(self)
-		#and bind it to a function
-		self.Bind(wx.EVT_TIMER,self.ping,self.pingTimer)
-		
 		self.systemUp = False
-		self.upTimer = wx.Timer(self)
-		self.Bind(wx.EVT_TIMER,self.updateUptime,self.upTimer)
 		
+		self.pingTimer = wx.Timer(self) #set the timer as a wx Timer
+		self.upTimer = wx.Timer(self)
+		self.Bind(wx.EVT_TIMER,self.ping,self.pingTimer) #and bind it to a function
+		self.Bind(wx.EVT_TIMER,self.updateUptime,self.upTimer)
+		self.Bind(wx.EVT_SIZE,self.onResize)
 		self.Bind(wx.EVT_CLOSE, self.OnExit)
+		
+		self.__get_clients__()
+		self.__set_bitmaps__()
 		self.__do_layout()
 		self.__set_properties()
 		
 		#start a oneshot one minute timer
 		self.pingTimer.Start(5000,oneShot=True)
 		self.upTimer.Start(1000)
+		
 		self.logWorker = LogThread()
 		self.logWorker.start()
 		
 		sys.stdout = self.log
 		sys.stderr = self.log
-		#print "stdout"
+
+	def __get_clients__(self):
+		with open("/etc/hosts",'r') as hostsFile:
+			ipReader = csv.reader(hostsFile,delimiter='\t')
+			for hosts in ipReader:
+				if hosts[0].startswith("192"):
+					self.clientDict[hosts[1]]=hosts[0]
+		clientList = []
+		for host in self.clientDict:
+			clientList.append((host,self.clientDict[host]))
+		self.sortedClients = sorted(clientList,key = lambda x: x[0].upper())
 	
+	def __set_bitmaps__(self):
+		printerInfoFont = wx.Font(app.printerFontSize,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL)
+		for i in xrange(NUMMACHINES):
+			if i < len(self.sortedClients):
+				self.statusLight.append(wx.StaticBitmap(self, wx.ID_ANY, app.bitmaps["machineDown"], style = wx.NO_BORDER))
+				machineLabel = self.sortedClients[i][0]
+				machineIP = self.sortedClients[i][1]
+				status = "DOWN"
+			else:
+				self.statusLight.append(wx.StaticBitmap(self, wx.ID_ANY, app.bitmaps["noMachine"], style = wx.NO_BORDER))
+				machineLabel = "---"
+				machineIP = "XXX.XXX.XXX"
+				status = None 		
+			this = self.statusLight[-1]
+			this.status = status
+			this.machineName = wx.StaticText(self, label=machineLabel,style=wx.ALIGN_CENTRE_HORIZONTAL|wx.ST_NO_AUTORESIZE)
+			this.machineName.SetFont(printerInfoFont)
+			this.sizer = (wx.StaticBoxSizer(wx.StaticBox(self, wx.ID_ANY, machineIP), wx.VERTICAL))
+			this.box = this.sizer.GetStaticBox()
+			this.pingWorker = PingThread(this)
+	
+	def __do_layout(self):
+		
+		#SIZERS
+		self.mainSizer = wx.BoxSizer(wx.VERTICAL)
+		self.grid_sizer1 = wx.GridSizer(app.grids, app.grids, app.grid_gap, app.grid_gap)
+		self.infoSizer = wx.BoxSizer(wx.HORIZONTAL)
+		self.logSizer = wx.BoxSizer(wx.VERTICAL)
+		
+		##WIDGETS
+		logstyle = wx.TE_MULTILINE|wx.TE_READONLY
+		self.log = wx.TextCtrl(self, wx.ID_ANY, style=logstyle)
+		self.restartButton = wx.Button(self, wx.ID_ANY,"RESTART SERVER")
+		updateLabel = "Updated xx:xx"
+		timeLabel =   "xx-xx:xx:xx"
+		self.updateText=wx.StaticText(self,-1,updateLabel,style = wx.ALIGN_CENTRE_HORIZONTAL|wx.ST_NO_AUTORESIZE)
+		self.upTimeText=wx.StaticText(self,-1,timeLabel,style=wx.ALIGN_CENTRE_HORIZONTAL|wx.ST_NO_AUTORESIZE)
+		
+		for light in self.statusLight:
+			light.sizer.Add(light, 0, wx.ALL | wx.EXPAND, 0)
+			light.sizer.Add(light.machineName,0,wx.CENTER)
+			self.grid_sizer1.Add(light.sizer, 1, wx.ALL | wx.EXPAND, app.gridSizerBorder)
+		
+		self.mainSizer.Add(self.grid_sizer1, 3, wx.EXPAND, 0)
+		
+		self.infoSizer.Add((20, 20), 1, wx.EXPAND, 0)
+		self.infoSizer.Add(self.updateText,1,wx.CENTER, 0)
+		self.infoSizer.Add((20, 20), 1, wx.EXPAND, 0)
+		self.infoSizer.Add(self.restartButton,1,wx.ALIGN_CENTER | wx.EXPAND, 0)
+		self.infoSizer.Add((20, 20), 1, wx.EXPAND, 0)
+		self.infoSizer.Add(self.upTimeText,1,wx.CENTER, 0)
+		self.infoSizer.Add((20, 20), 1, wx.EXPAND, 0)
+		
+		self.mainSizer.Add(self.infoSizer,0,wx.TOP | wx.BOTTOM | wx.EXPAND,10)
+		self.logSizer.Add(self.log, 1, wx.EXPAND, 0)
+		self.mainSizer.Add(self.logSizer,1,wx.EXPAND,0)
+		
+		self.SetSizer(self.mainSizer)
+		self.mainSizer.Fit(self)
+		self.SetMinSize((650,500))
+		self.Layout()	
+	
+	def __set_properties(self):
+		# begin wxGlade: MyFrame.__set_properties
+		self.SetTitle("EnVision Clients")
+		self.restartButton.Bind(wx.EVT_BUTTON,self.restartServer)
+		updateFont = wx.Font(12,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_ITALIC,wx.FONTWEIGHT_NORMAL)
+		self.updateText.SetFont(updateFont)
+		self.restartButton.SetFont(updateFont)
+		self.upTimeText.SetFont(updateFont)
+
 	def updateUptime(self,event):
 		if self.systemUp:
 			self.upTimeSeconds +=1
@@ -191,7 +222,7 @@ class MainWindow(wx.Frame):
 		machine.pingWorker = PingThread(machine)
 		if self.pingNum >= len(self.clientDict)-1:
 			now = datetime.datetime.now()
-			self.updateText.SetLabel("Last Updated @ " + now.strftime("%H:%M"))
+			self.updateText.SetLabel("Updated " + now.strftime("%H:%M"))
 			allMachinesUp = True
 			for status in self.statusLight:
 				if status.status == "DOWN":
@@ -234,52 +265,22 @@ class MainWindow(wx.Frame):
 		for machine in self.statusLight:
 			if machine.status != None:
 				machine.pingWorker.start()
-				#time.sleep(0.5)
 		self.pingTimer.Start(60000,oneShot=True)
 		self.restartButton.Enable()
 	def onResize(self,newSize):
-		winWidth = newSize.GetSize()[0]
-		winHeight = newSize.GetSize()[1]
-		app.__set_bitmaps__(winWidth,winHeight)
-		for light in self.statusLight:
-			if light.status == "DOWN":
-				light.SetBitmap(app.bitmaps["machineDown"])
-			elif light.status is None:
-				light.SetBitmap(app.bitmaps["noMachine"])
-			else:
-				light.SetBitmap(app.bitmaps["machineUp"])
-		self.Layout()
-	def __set_properties(self):
-		# begin wxGlade: MyFrame.__set_properties
-		self.SetTitle("EnVision Clients")
-		# for light in self.statusLight:
-			# light.SetSize(light.GetBestSize())
-			# light.SetBitmapDisabled(self.bitmaps["machineDown"])
-		self.restartButton.Bind(wx.EVT_BUTTON,self.restartServer)
-
-	def __do_layout(self):
-		for light in self.statusLight:
-			light.sizer.Add(light, 1, wx.ALL | wx.EXPAND, 0)
-			light.sizer.Add(light.machineName,0,wx.CENTER)
-			self.grid_sizer1.Add(light.sizer, 1, wx.ALL | wx.EXPAND, app.gridSizerBorder)
-		self.panel_1.SetSizer(self.grid_sizer1)
-		self.sizer4.Add(self.panel_1, 2, wx.EXPAND, 0)
-		self.infoSizer.AddStretchSpacer(prop=1)
-		self.infoSizer.Add(self.restartButton,1,wx.ALIGN_CENTER|wx.ALIGN_CENTER_HORIZONTAL|wx.EXPAND,0)
-		self.infoSizer.AddStretchSpacer(prop=1)
-		self.infoSizer.Add(self.updateText,1,wx.EXPAND | wx.ALIGN_CENTER | wx.ALIGN_CENTER_HORIZONTAL | wx.CENTRE)
-		self.infoSizer.AddStretchSpacer(prop=1)
-		self.infoSizer.Add(self.upTimeText,1,wx.EXPAND | wx.ALIGN_CENTER | wx.ALIGN_CENTER_HORIZONTAL | wx.CENTRE)
-		self.infoSizer.AddStretchSpacer(prop=1)
-		self.sizer4.Add(self.infoSizer,0,wx.TOP | wx.BOTTOM | wx.EXPAND,10)
-		#self.panel_2.SetSizer(self.sizer5)
-		
-		self.logSizer.Add(self.log, 1, wx.ALIGN_CENTER| wx.EXPAND, 0)
-		self.panel_2.SetSizer(self.logSizer)
-		self.sizer4.Add(self.panel_2,1,wx.EXPAND,0)
-		self.SetSizer(self.sizer4)
-		self.sizer4.Fit(self)
-		self.SetMinSize((650,500))
+		winWidth = newSize.GetSize()[0] * (2.0/3.0)
+		winHeight = newSize.GetSize()[1] * (2.0/3.0)
+		if (winWidth > 1 and winHeight > 1):
+			app.__set_bitmaps__(winWidth,winHeight)
+			for light in self.statusLight:
+				if light.status == "DOWN":
+					light.SetBitmap(app.bitmaps["machineDown"])
+				elif light.status is None:
+					light.SetBitmap(app.bitmaps["noMachine"])
+				else:
+					light.SetBitmap(app.bitmaps["machineUp"])
+				light.sizer.Layout()
+		newSize.Skip()
 		self.Layout()
 		
 	def restartServer(self,event):
@@ -341,9 +342,12 @@ class MyApp(wx.App):
 		imageDir = "/home/e4ms/job_tracking/images/"
 		imageList = ["red_button.png","green_button.png","gray_button.png"]
 		bitmaps = []
-		bitmap_padding = 10
-		bitmapWidth = (dw - 2 * self.gridSizerBorder - self.grid_gap)/self.grids - 2 * bitmap_padding
-		bitmapHeight = (dh - 2*self.gridSizerBorder - self.grid_gap) / self.grids - 2 * bitmap_padding - self.buttonSize
+		bitmap_padding = 20
+		bitmapWidth = ((dw - (2*self.gridSizerBorder) - self.grid_gap) / self.grids) - self.grid_gap - (2 * bitmap_padding)
+		bitmapHeight =((dh - (2*self.gridSizerBorder) - self.grid_gap) / self.grids) - self.grid_gap - (2 * bitmap_padding)
+		#bitmapWidth = (dw - 2 * self.gridSizerBorder - self.grid_gap)/self.grids - 2 * bitmap_padding
+		#bitmapHeight = (dh - 2*self.gridSizerBorder - self.grid_gap) / self.grids - 2 * bitmap_padding
+		#print dw,dh,bitmapWidth,bitmapHeight
 		bitmapScale = bitmapHeight if bitmapHeight < bitmapWidth else bitmapWidth
 		for image in imageList:
 			bitmap = wx.Image(imageDir + image)

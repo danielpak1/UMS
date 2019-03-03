@@ -220,6 +220,7 @@ class MainWindow(wx.Frame):
 		else:
 			machine.SetBitmap(app.bitmaps["noMachine"])
 		machine.pingWorker = PingThread(machine)
+		self.Layout()
 		if self.pingNum >= len(self.clientDict)-1:
 			now = datetime.datetime.now()
 			self.updateText.SetLabel("Updated " + now.strftime("%H:%M"))

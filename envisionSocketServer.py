@@ -777,33 +777,36 @@ class DatabaseHandler():
 		#Initial connection required
 			logger.debug("AttributeError on first DB access")
 			try:
-				self.db = MySQLdb.connect(host=self.host,user=self.username,passwd=self.password,db=self.database)
+				#self.db = MySQLdb.connect(host=self.host,user=self.username,passwd=self.password,db=self.database)
+				self.db = mysql.connector.connect(pool_name = self.database +"-pool", pool_size = 5, host=self.host,user=self.username,passwd=self.password,db=self.database)
 			except Exception as e:
 				#need to add some error handling here for when the connection fails
-				logger.critical("Failed to connect to DB on first try, received %s", e)
+				logger.critical("Failed to connect to DB POOL on first try, received %s", e)
 				return False
 			else:
 				self.db.autocommit(True) #changes made are committed on execution
 				self.cur = self.db.cursor() #set the cursor to the beginning of the DB
-				logger.info("New Connection to %s",self.host)
+				logger.info("New POOL to %s",self.host)
 		else:
 			try:
-				self.db.cursor().execute("SELECT VERSION()")
+				self.db = mysql.connector.connect(pool_name = self.database + "-pool")
+				#self.db.cursor().execute("SELECT VERSION()")
 			except Exception as e:
-				logger.warning("Failed to re-connect to DB, received %s", e)
+				logger.warning("Failed to re-connect to DB POOL, received %s", e)
 				try:
-					self.db = MySQLdb.connect(host=self.host,user=self.username,passwd=self.password,db=self.database)
+					#self.db = MySQLdb.connect(host=self.host,user=self.username,passwd=self.password,db=self.database)
+					self.db = mysql.connector.connect(pool_name = self.database +"-pool", pool_size = 5, host=self.host,user=self.username,passwd=self.password,db=self.database)
 				except Exception as e:
-					logger.critical("Failed to re-connect to DB, received %s", e)
+					logger.critical("Failed to re-connect to DB POOL, received %s", e)
 					return False
 				else:
 					self.db.autocommit(True) #changes made are committed on execution
 					self.cur = self.db.cursor() #set the cursor to the beginning of the DB
-					logger.info("Connection to %s restarted",self.host)
+					logger.info("Connection to %s -POOL restarted",self.host)
 			else:
-				#self.db.autocommit(True) #changes made are committed on execution
+				self.db.autocommit(True) #changes made are committed on execution
 				self.cur = self.db.cursor() #set the cursor to the beginning of the DB
-				logger.debug("Connection to %s still alive",self.host)
+				logger.debug("Connection from %s POOL",self.host)
 		return True
 	#function to clean up the connection 
 	def closeDB(self):

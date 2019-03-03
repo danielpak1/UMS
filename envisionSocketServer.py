@@ -9,7 +9,7 @@ May 2016
 All Rights Reserved
 """
 
-version = "v229"
+version = "v300"
 """
 -- 223 added laptop kiosk functionalities
 --123 added printer kiosk functionalities

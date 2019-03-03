@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-import MySQLdb, csv, datetime,sys
+import MySQLdb, csv, datetime,sys, os, json
 passFile = '/home/e4ms/job_tracking/passList.txt'
 if os.path.isfile(passFile):
 #check that the password file exists

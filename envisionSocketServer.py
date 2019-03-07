@@ -79,7 +79,8 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			eventInfo.append(self.incoming[1]) # append the machine name to any info
 			eventInfo.append(self.incoming[2]) #append the user to any info
 			self.incoming[2] = "|".join(eventInfo) #recombine with a pipe character
-			self.incoming[1]="DBERROR" #packet now looks like ["EVENT", "DBERROR", "INFO|MACHINE|USER"]
+			self.incoming[1]="DBERROR" #add the error message
+			del self.incoming[-1] #packet now looks like ["EVENT", "DBERROR", "INFO|MACHINE|USER"]
 			logger.info("Returning Packet: %s",self.incoming)
 			self.respond(self.incoming)
 	

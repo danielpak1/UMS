@@ -685,8 +685,11 @@ class MainWindow(wx.Frame):
 			self.processDeny(event, statusInfo)
 		elif status == "DBERROR":
 		#problem with the process directive on the socketServer, this will resend the packet indefinitely (YIKES)
-			time.sleep(3)
-			self.socketWorker.sendEvent(command,user,machine,machineTime)
+			#time.sleep(3)
+			#self.socketWorker.sendEvent(command,user,machine,machineTime)
+			errorMsg = "DATABASE ERROR\n\n Please try again"
+			wx.MessageBox(errorMsg,"ERROR")
+			
 	
 	#called after the socketlistener determines the packets were properly formed, and were accepted by the server
 	def processReply(self, command, info):

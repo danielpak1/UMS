@@ -595,6 +595,7 @@ class MainWindow(wx.Frame):
 		wx.Frame.__init__(self, parent, title = title, style=styleFlags)
 		self.adminMode = False
 		self.bi = None
+		self.retryCount = 0
 		#bind a close event to the function
 		self.Bind(wx.EVT_CLOSE, self.OnClose)
 		#sizers for centering the static text 
@@ -912,14 +913,21 @@ class MainWindow(wx.Frame):
 		
 		if status == "OK":
 		#checks if the command was accepted
+			self.retryCount = 0
 			self.processReply(event,statusInfo)
 		elif status == "DENY":
 		#checks if the command was rejected
+			self.retryCount = 0
 			self.processDeny(event, statusInfo)
 		elif status == "DBERROR":
 		#problem with the process directive on the socketServer, this will resend the packet indefinitely (YIKES)
-			time.sleep(3)
-			self.socketWorker.sendEvent(command,user,machine,machineTime)
+			if self.retryCount < 3:
+				self.retryCount+=1
+				time.sleep(3)
+				self.socketWorker.sendEvent(sent)
+			else:
+				errorMsg = "DATABASE ERROR\n\n Please try again\n"+sent[0]
+				wx.MessageBox(errorMsg,"ERROR")
 	#called after the socketlistener determines the packets were properly formed, and were accepted by the server
 	def processReply(self, command, info):
 		#function expects two strings: the command and the information returned by the server
@@ -996,6 +1004,7 @@ class PrinterFrame(wx.Frame):
 		self.panel_1 = wx.Panel(self, wx.ID_ANY)
 		self.btnPanel = wx.Panel(self,wx.ID_ANY)
 		self.inactiveCount = 0
+		self.retryCount = 0
 		self.activeInput = False
 		#bind a wxTimer to UpdateEvent, this timer determines if the windows is inactive
 		#it does this by checking if the popupFrame has focus for a set amount of time (it shouldn't if the user is using the system)
@@ -1370,14 +1379,21 @@ class PrinterFrame(wx.Frame):
 		
 		if status == "OK":
 		#checks if the command was accepted
+			self.retryCount = 0
 			self.processReply(event,statusInfo)
 		elif status == "DENY":
 		#checks if the command was rejected
+			self.retryCount = 0
 			self.processDeny(event, statusInfo)
 		elif status == "DBERROR":
 		#problem with the process directive on the socketServer, this will resend the packet indefinitely (YIKES)
-			time.sleep(3)
-			self.socketWorker.sendEvent(command,user,machine,machineTime)
+			if self.retryCount < 3:
+				self.retryCount+=1
+				time.sleep(3)
+				self.socketWorker.sendEvent(sent)
+			else:
+				errorMsg = "DATABASE ERROR\n\n Please try again\n"+sent[0]
+				wx.MessageBox(errorMsg,"ERROR")
 
 	def setupMachines(self,machines):
 		#machineNum = 0

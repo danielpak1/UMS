@@ -926,7 +926,7 @@ class MainWindow(wx.Frame):
 				time.sleep(3)
 				self.socketWorker.sendEvent(sent)
 			else:
-				errorMsg = "DATABASE ERROR\n\n Please try again\n"+sent[0]
+				errorMsg = "DATABASE ERROR\n\n Please try again\n\n"+sent[0]
 				wx.MessageBox(errorMsg,"ERROR")
 	#called after the socketlistener determines the packets were properly formed, and were accepted by the server
 	def processReply(self, command, info):
@@ -1392,7 +1392,7 @@ class PrinterFrame(wx.Frame):
 				time.sleep(3)
 				self.socketWorker.sendEvent(sent)
 			else:
-				errorMsg = "DATABASE ERROR\n\n Please try again\n"+sent[0]
+				errorMsg = "DATABASE ERROR\n\n Please try again\n\n"+sent[0]
 				wx.MessageBox(errorMsg,"ERROR")
 
 	def setupMachines(self,machines):

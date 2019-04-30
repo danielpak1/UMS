@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-import MySQLdb, csv, datetime
+import MySQLdb, csv, datetime, os, json, sys
 passFile = '/home/e4ms/job_tracking/passList.txt'
 if os.path.isfile(passFile):
 #check that the password file exists
@@ -41,23 +41,26 @@ while True:
 	else:
 		print ("Invalid Selection: ", selection)
 cur = db.cursor()
-query="select user,codes from ledger"
+query="select user,codes from ledger where find_in_set (" + selection + ",codes)>0"
 cur.execute(query)
 
 results=cur.fetchall()
 users=[]
+#print results
 for result in results:
 	codes = None
-	if len(result[1])>2:
-		codes = result[1].split(',')
-	elif int(result[1])!=0:
-		codes = []
-		codes.append(result[1])
-	if codes is not None:
-		users.append({})
-		users[-1]['user']=result[0]
-		users[-1]['codes']=codes
+	codes = result[1].split(',')
+	users.append({})
+	users[-1]['user']=result[0]
+	users[-1]['codes']=codes
+	cur = db.cursor()
+	if len(codes)>1:
+		query="update ledger set codes = codes & ~" + selection + " where codes & " + selection
+	else:
+		query="update ledger set codes=DEFAULT where find_in_set (" + selection + ",codes)>0"
+	cur.execute(query)
 
+print query
 cur = db.cursor()
 query="select id,code,stipend from classes"
 cur.execute(query)

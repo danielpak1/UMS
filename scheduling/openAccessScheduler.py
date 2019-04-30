@@ -253,8 +253,8 @@ class EnVisionScheduling(wx.App):
 		return True
 	
 	def loadFile(self):
-		if os.path.isfile('./passList.txt'):
-			with open('passList.txt','r') as passFile:
+		if os.path.isfile('../../passList.txt'):
+			with open('../../passList.txt','r') as passFile:
 				try:
 					self.passDict = json.load(passFile) # load json info into a list of dicts
 				except: 

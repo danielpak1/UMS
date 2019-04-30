@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import MySQLdb, hashlib
+import MySQLdb, hashlib, os, json
 passFile = '/home/e4ms/job_tracking/passList.txt'
 
 classList = []
@@ -30,7 +30,7 @@ for cls in result:
 
 #print classList
 for cls in classList:
-	codeString = cls[0]+cls[1]+'-'+'SQ18'
+	codeString = cls[0]+cls[1]+'-'+'SQ19'
 	code = str(int(hashlib.md5(codeString.upper()).hexdigest(),16) % (10 ** 6)).zfill(6)
 	cls[2]=code
 	query = 'UPDATE classes SET code="'+code+'" WHERE department="'+cls[0]+'" AND number="'+cls[1]+'"'

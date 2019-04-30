@@ -237,7 +237,7 @@ class MainWindow(wx.Frame):
 		else:
 			self.pingNum+=1
 	def ping(self,event):
-		self.inPing = True
+		#self.inPing = True
 		self.restartButton.Disable()
 		with open("/etc/hosts",'r') as hostsFile:
 			ipReader = csv.reader(hostsFile,delimiter='\t')
@@ -265,6 +265,8 @@ class MainWindow(wx.Frame):
 								break
 		for machine in self.statusLight:
 			if machine.status != None:
+				while (machine.pingWorker.isAlive()):
+					time.sleep(.01)
 				machine.pingWorker.start()
 		self.pingTimer.Start(60000,oneShot=True)
 		self.restartButton.Enable()

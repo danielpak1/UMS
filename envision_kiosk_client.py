@@ -15,7 +15,7 @@ else:
 	GTK = True
 	MSW = False
 
-VERSION = "400"
+VERSION = "401"
 MINIMUMFONTSIZE = 4
 NUMPRINTERS = 16
 #SERVERADDRESS = 'localhost'
@@ -1105,6 +1105,10 @@ class PrinterFrame(wx.Frame):
 		self.HideSelf()
 	
 	def HideSelf(self):
+		#print self.GetChildren()
+		childWindows = list(self.GetChildren())
+		for child in childWindows:
+			del child
 		self.timer.Stop()
 		self.inactiveCount = 0
 		self.bitmap_buttons[-1].Disable()
@@ -1298,9 +1302,11 @@ class PrinterFrame(wx.Frame):
 			if status == "DISABLED":
 				that.optionalBtn.Disable()
 				that.submitBtn.Enable()
+				that.killBtn.Disable()
 			elif status == "ENABLED":
 				that.optionalBtn.Enable()
 				that.submitBtn.Disable()
+				that.killBtn.Enable()
 			elif status == "MAINTENANCE":
 				that.optionalBtn.Disable()
 				that.submitBtn.Disable()

@@ -9,7 +9,7 @@ May 2016
 All Rights Reserved
 """
 
-version = "v229"
+version = "v230"
 """
 -- 223 added laptop kiosk functionalities
 --123 added printer kiosk functionalities
@@ -90,6 +90,12 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		#make sure machine exists, getValues returns relay, startTime, threadName, printLength, userID and status
 			machineValues = envisionSS.envisionDB.getValues(machine)
 			logger.debug("%s has values - %s",machine,machineValues)
+			#verify the database is not corrupt...this happens sometimes when a thread isn't ended correctly
+			#checking to see if the thread is set but the user is Null. There is probably a more comprehensive way to do this
+			if (machineValues[3] is not None) and (machineValues[5] is None):
+				logger.error("Machine DB is corrupt. Resetting")
+				envisionSS.envisionDB.release(machine)
+				machineValues = envisionSS.envisionDB.getValues(machine)
 			return machineValues
 		else:
 			logger.debug("%s not found in availableMachines",machine)
@@ -1005,13 +1011,19 @@ class DatabaseHandler():
 		self.cur.execute(query)
 		machines = self.cur.fetchall()
 		for machine in machines:
-			logger.info("Restarting Thread on %s",machine[0])
 			machineValues = self.getValues(machine[0])
-			threadName = machine[0].replace('-','_') #minus signs cause problems with the getattr call, replace with underscore
-			setattr(envisionSS,threadName,TimerThread(self,machine[0],machineValues))
-			getattr(envisionSS,threadName).start()#start a thread
-			query = 'UPDATE machines set thread="'+threadName+'" WHERE name="'+machine[0]+'"'#update the table
-			self.cur.execute(query)	
+			#verify the database is not corrupt...this happens sometimes when a thread isn't ended correctly
+			#checking to see if the thread is set but the user is Null. There is probably a more comprehensive way to do this
+			if (machineValues[3] is not None) and (machineValues[5] is None):
+				logger.error("%s DB entry is corrupt. Resetting...",machineValues[0])
+				envisionSS.envisionDB.release(machine[0])
+			else:
+				logger.info("Restarting Thread on %s",machine[0])
+				threadName = machine[0].replace('-','_') #minus signs cause problems with the getattr call, replace with underscore
+				setattr(envisionSS,threadName,TimerThread(self,machine[0],machineValues))
+				getattr(envisionSS,threadName).start()#start a thread
+				query = 'UPDATE machines set thread="'+threadName+'" WHERE name="'+machine[0]+'"'#update the table
+				self.cur.execute(query)	
 	"""
 	-----------------------------------------------------------------------------------------------
 	"""

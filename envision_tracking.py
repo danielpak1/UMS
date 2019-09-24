@@ -376,9 +376,11 @@ class SocketThread(threading.Thread):
 	#use this function to send message through the socket to the server. Function expects a packet length of 3
 	def sendEvent(self,eventPacket):
 		#display a waiting message
-		message = "Contacting Server..."
-		busyMsg = PBI.PyBusyInfo(message, parent=None, title=" ")
-		wx.Yield()
+		# message = "Contacting Server..."
+		# busyMsg = PBI.PyBusyInfo(message, parent=None, title=" ")
+		# wx.Yield()
+		wx.CallAfter(self.parent.contactServer)
+		wx.GetApp().ProcessPendingEvents()
 		# convert all messages to uppercase
 		packet = [x.upper() for x in eventPacket]
 		#form the list into a string delineated by a SPACE 
@@ -391,12 +393,12 @@ class SocketThread(threading.Thread):
 			client.send(packetStr)
 			#receive a response in a buffer, and split string into a list
 			reply=(client.recv(1024)).split()
+			wx.CallAfter(self.parent.closeSocket)
+			wx.GetApp().ProcessPendingEvents()
 		except Exception, msg:
 			#call this function if the connection was a failure
-			del busyMsg
 			wx.CallAfter(self.parent.socketClosed,wx.EVT_CLOSE,msg)
 		else:
-			del busyMsg
 			if len(reply) == 3:
 			#make sure the reply packet is properly formed
 				if reply[0] == packet[0] and reply[1]:
@@ -470,50 +472,72 @@ class ProgramThread(threading.Thread):
 		self.process.wait()
 		wx.CallAfter(self.parent.OnThreadEnded,wx.EVT_CLOSE)
 
+
+class serialThread(threading.Thread):
+	def __init__(self):
+		threading.Thread.__init__(self)
+		self.PACKET_SIZE = 4
+		self.NUM_TXs = 1
+		self.BUFFER_SIZE = (self.PACKET_SIZE * self.NUM_TXs)
+		self.NEW_PACKET = False
+		self.rxBuffer = ""
+		self.RX = True
+		self.RUN_THREAD = True
+		self.packetAccepted = False
+	def stop(self):
+		self.RUN_THREAD = False
+	def run(self):
+		while (self.RUN_THREAD):
+			if (self.RX == True):
+				rxStarted = False
+				packetStart = '<'
+				packetEnd = '>'
+				
+				while (self.NEW_PACKET == False and self.RUN_THREAD):
+					newChar = xbee.read()
+					time.sleep(0.01)
+					print newChar
+					if (rxStarted):
+						if (newChar != packetEnd):
+							self.rxBuffer += newChar
+							print self.rxBuffer
+							if (len(self.rxBuffer) >= self.BUFFER_SIZE):
+								rxStarted = False
+								self.rxBuffer = ""
+						else:
+							rxStarted = False
+							self.NEW_PACKET = True
+					elif (newChar == packetStart):
+						rxStarted = True
+				#values = self.rxBuffer.split('|')
+				if self.rxBuffer == "<OK>":
+					self.stop()
+		
+		
+		
 #thread to run the xbee light towers
 class LightThread(threading.Thread):
 	#initializer function that takes a parent and user selection value as input
-	def __init__(self,parent,value):
+	def __init__(self,parent):
 		threading.Thread.__init__(self)
 		self.parent = parent
-		self.response=value
+		self.response=None
 	#not needed but may add functionality in the future
 	def stop(self):
 		pass
 	#required function by threading.start(), light() is redundant but kept it anyway
 	def run(self):
-		self.light()
+		self.RUN_FLAG = TRUE
 	#function to turn the specified light on and off 
-	def light(self):
-		if self.response == wx.ID_YES:
-			#blink the light five times, with a one second delay
-			#50 msec delay is for the latency in the xbees, multiple calls is for redundancy (radio misses sometimes)
+	def light(self,value):
+		#self.serialWorker = serialThread()
+		#self.serialWorker.start()
+		#while (self.serialWorker.RUN_THREAD):
+		if value == wx.ID_YES:
 			xbee.write("<OK>")
-			# for indx in xrange(3):
-				# for i in xrange(5):
-					# xbee.write("<green on>")
-					# time.sleep(0.05)
-				# time.sleep(1)
-				# for i in xrange(5):
-					# xbee.write("<green off>")
-					# time.sleep(0.05)
-				# time.sleep(1)
-		elif self.response == wx.ID_NO:
+		elif value == wx.ID_NO:
 			xbee.write("<DENY>")
-			# for indx in xrange(3):
-				# for i in xrange(5):
-					# if indx == 0:
-						# xbee.write("<buzz on>")
-						# time.sleep(0.05)
-					# xbee.write("<red on>")
-					# time.sleep(0.05)
-				# time.sleep(1)
-				# for i in xrange(5):
-					# xbee.write("<buzz off>")
-					# time.sleep(0.05)
-					# xbee.write("<red off>")
-					# time.sleep(0.05)
-				# time.sleep(1)
+		time.sleep(2);
 	
 #create the frame, inside the app, that holds the panel, and all of the functionality
 #this is the main body of the GUI...everything originates from here
@@ -559,6 +583,8 @@ class MainWindow(wx.Frame):
 		elif machineName.startswith('front'):
 			self.bmp = wx.Bitmap("front-desk.jpg")
 			self.brandingFont = wx.Font(20, wx.DECORATIVE, wx.ITALIC, wx.BOLD)
+			self.lightWorker = LightThread(self)
+			self.lightWorker.start()
 		elif machineName.startswith('laser') or machineName.startswith("vacuum") or machineName.startswith("drill"):
 			self.bmp = wx.Bitmap("touch_screen.jpg")
 			self.brandingFont = wx.Font(12, wx.DECORATIVE, wx.ITALIC, wx.LIGHT)
@@ -633,6 +659,21 @@ class MainWindow(wx.Frame):
 		#Not interested in seeing how this fails on other platforms
 			print "Platform not supported"
 			self.Destroy()
+
+	def contactServer(self):
+		message = "Contacting Server..."
+		self.busyMsg = PBI.PyBusyInfo(message, parent=None, title=" ")
+		time.sleep(0.1)
+		try:
+			wx.Yield()
+		except Exception as e:
+			print e
+	def closeSocket(self):
+		try:
+			del self.busyMsg
+		except Exception as e:
+			print e
+			print "busy message didn't exist"			
 	
 	#function to listen to published messages from the timeFrame process
 	def timeListener(self, timeHour=None, timeMinute=None):
@@ -762,8 +803,7 @@ class MainWindow(wx.Frame):
 		now = datetime.datetime.now()
 		errorList = error.split("|")
 		if machineName.upper().startswith("FRONT"):
-			lightWorker = LightThread(self,wx.ID_NO)
-			lightWorker.start()
+			self.lightWorker.light(wx.ID_NO)
 		if command == "EVT_CHECKID":
 		#if check id fails, explain why
 			if errorList[0] == "WAIVER":
@@ -1125,12 +1165,10 @@ class MainWindow(wx.Frame):
 					self.openAccess(wx.EVT_TIMER)
 		elif result == wx.ID_NO:
 		#user declined to accept the terms, deny access and fire the red light
-			lightWorker = LightThread(self,result)
-			lightWorker.start()
+			self.lightWorker.light(result)
 		else:
 		#user accepted the terms, allow access, fire the green light, and send EVT_START to the server to update the log
-			lightWorker = LightThread(self,result)
-			lightWorker.start()
+			self.lightWorker.light(result)
 			self.socketWorker.sendEvent(["EVT_START",machineName,self.userIDnumber,info])
 	
 	#called after the server checks and accepts the user ID for a machine

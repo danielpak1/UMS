@@ -1093,8 +1093,9 @@ class DatabaseHandler():
 						result=self.cur.execute(query)
 						if bool(result):
 						#check if the user has used any codes this quarter
-							if bool(self.cur.fetchall()[0][0]):
-								usedCodes = self.cur.fetchall()[0][0].split(',')
+							usedCodes = self.cur.fetchall()
+							if bool(usedCodes[0][0]):
+								usedCodes = (usedCodes[0][0]).split(',')
 							else:
 								usedCodes = []
 							if codeID not in usedCodes:

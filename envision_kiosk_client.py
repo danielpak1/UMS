@@ -1105,10 +1105,13 @@ class PrinterFrame(wx.Frame):
 		self.HideSelf()
 	
 	def HideSelf(self):
+		##Need to do a better job of dialog garbage collection here...		
 		#print self.GetChildren()
-		childWindows = list(self.GetChildren())
-		for child in childWindows:
-			del child
+		#childWindows = list(self.GetChildren())
+		# childWindows = self.GetChildren()
+		# for child in childWindows:
+			# child.Destroy()
+		
 		self.timer.Stop()
 		self.inactiveCount = 0
 		self.bitmap_buttons[-1].Disable()

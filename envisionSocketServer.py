@@ -9,8 +9,9 @@ May 2016
 All Rights Reserved
 """
 
-version = "v230"
+version = "v300"
 """
+--300 swapped out custom relay boards for KasaSMartPowerStrips
 -- 223 added laptop kiosk functionalities
 --123 added printer kiosk functionalities
 - 21 added CHECKID functionality to replace database copying to local machines
@@ -40,18 +41,21 @@ import datetime, time #time functions and handling
 import paramiko #sftp / ssh capabilities
 import logging #logs to a file for
 from logging.handlers import TimedRotatingFileHandler
+from KasaSmartPowerStrip import SmartPowerStrip
 #separate (protected) file with a list of usernames and passwords for various hosts
 passFile = '/home/e4ms/job_tracking/passList.txt'
 
-#global varialbes for the logic level of the relays (changes depends on relay brand)
-relayOn = "1"
-relayOff = "0"
+##depracated global varialbes for the logic level of the relays (changes depends on relay brand)
+## still used for readability
+relayOn = "on"
+relayOff = "off"
+
 logger = logging.getLogger("EnVision Logger")
 handler = logging.handlers.TimedRotatingFileHandler("/var/log/envision/socketServer.log",when='midnight',interval=1,backupCount=7)
 formatter=logging.Formatter("%(levelname)s:%(asctime)s:%(threadName)s:%(message)s")
 handler.setFormatter(formatter)
 logger.addHandler(handler)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.INFO)#DEBUG, INFO, WARNING, etc
 #logger.basicConfig(format="%(levelname)s:%(asctime)s:%(threadName)s:%(message)s", filename="/var/log/envision/socketServer.log", level=logging.INFO)
 
 
@@ -360,7 +364,8 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 					#this will let me use the db to develop a pointer to the thread object with getattr
 					setattr(envisionSS,threadName,TimerThread(self,machine,machineValues))
 					getattr(envisionSS,threadName).start() #start the threaded timer
-					startSuccess = getattr(envisionSS,threadName).sshRelay(relayOn) #start the machine
+					#startSuccess = getattr(envisionSS,threadName).sshRelay(relayOn) #start the machine
+					startSuccess = getattr(envisionSS,threadName).kasaRelay(relayOn)
 					#startSuccess = True
 					if startSuccess:
 					#relay started successfully
@@ -672,6 +677,7 @@ class TimerThread(threading.Thread):
 		self.runFlag = True #run Flag indicates the thread is still running. Can be called externally to end the thread
 		self.killFlag = False #kill flag can be set externally and allows the thread to end, but not clear the timer...timer can be resumed at a later time
 		self.printLength = 0
+		self.timeExpired = False
 	#required function called by start()
 	def run(self):
 		timeStamp = datetime.datetime.strptime(self.machineValues[2],'%Y%m%d-%H:%M:%S')
@@ -679,12 +685,16 @@ class TimerThread(threading.Thread):
 		while self.runFlag:
 		#run until timer expires or kill flag is set
 			now = datetime.datetime.now()
+			logger.debug("counting down thread %s",self.machine)
 			if (timeStamp + self.printLength < now):
 			#check if the timer has expired, and end the thread by setting the run flag...kills the while loop
+				
 				self.runFlag = False
+				self.timeExpired = True
+				logger.debug("thread expired ",self.machine)
 			else:
 				time.sleep(1)
-		if self.killFlag is False:
+		if self.killFlag == False or self.timeExpired == True:
 		#the killflag is set if the theard is ended before the timer has expired (for restarting the server, etc)
 		#allows the thread to be restarted later, with all of the timestamps in place
 		#if still False, call stop() to turn off the relay
@@ -698,67 +708,36 @@ class TimerThread(threading.Thread):
 	def stop(self):
 	#stop is a function to turn the relay off after the timer has expired
 	#This create a new db connection. It's not ideal but I'm being lazy
-		success = self.sshRelay(relayOff) #open an SSH tunnel to the relay machine, and send the off signal
-		if success:
+		#success = self.sshRelay(relayOff) #open an SSH tunnel to the relay machine, and send the off signal
+		success = self.kasaRelay(relayOff)
+		logger.debug('%s',success)
+		if success['system']['set_relay_state']['err_code'] == 0:
 		#if the tunnel was a success
 			logger.info("%s STOPPED", self.machine)
 			#if envisionSS.envisionDB.cur is None:
 			e4Connect = envisionSS.envisionDB.connectDB()
 			if e4Connect:
-				#db = MySQLdb.connect(host="localhost",user=envisionSS.username,passwd=envisionSS.password,db="envision_control")
-				#db.autocommit(True)
-				#cur = db.cursor()
-				#update the log
 				envisionSS.envisionDB.logEnd(self.machine)
 				#clear the machine properties to release the machine and the user
 				envisionSS.envisionDB.release(self.machine)
-				#envisionSS.envisionDB.closeDB()
 			else:
 				logger.warning("Failed to connect to local DB...retrying")
-				time.sleep(5)
-				self.stop()
+				#time.sleep(5)
+				#self.stop()
 
 		else:
 		#if the tunnel failed, wait 10 seconds and try again. This will keep trying until the relay turns off successfully
 			logger.warning("%s Failed to Stop", self.machine)
-			time.sleep(10)
-			self.stop()
-	#tunnel to the relay machine, and change the GPIO pin of the relay
-	def sshRelay(self,command):
+			#time.sleep(10)
+			#self.stop()
+	
+	
+	def kasaRelay(self,command):
 		logger.debug("ATTEMPTING TO MODIFY THE RELAY")
-		if 0 < int(self.machineValues[1][5:]) <= 8:
-		#relays 1-8 live on relayPi 1
-			socketPi = "relayPi"
-			relayNum = 0
-		elif 8 > int(self.machineValues[1][5:]) <= 16:
-		#relays 9-16 live on relayPi 2
-			socketPi = "relayPi-2"
-			relayNum = 1
-		else:
-		#relays 17-24 live on relayPi 3
-			socketPi = "relayPi-3"
-			relayNum = 2
-		ssh = paramiko.SSHClient() #open the tunnel
-		ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy()) #accept the host key (security risk, but there aren't any untrusted clients on this LAN
-		#cmd = 'gpio -g write $'+self.machineValues[1]+' '+ command + '\n' #modify the gpio pin
-		cmd = 'echo ' + command + ' > /sys/class/gpio/gpio$' + self.machineValues[1] + '/value\n'
-		logger.debug("Sending %s to %s",cmd,socketPi)
-		try:
-			ssh.connect(socketPi,username=envisionSS.envisionDB.username,password=envisionSS.envisionDB.password)
-			term=ssh.invoke_shell() #open a new shell
-			success = term.send(cmd) #returns true if the 2>&1 is zero
-			time.sleep(1) #need a delay before closing the shell
-			term.close()
-			ssh.close()
-			if success:
-				return True
-			else:
-				raise Exception
-		except Exception as e:
-			logger.critical("Failed SSH tunnel. Received %s",e)
-			return False
-
-			
+		power_strip = self.machineValues[1]
+		returnVal = getattr(envisionSS,power_strip).toggle_plug(command,plug_name=self.machine)
+		return returnVal
+	
 class DatabaseHandler():
 	def __init__(self,parent,location):
 		self.parent = parent
@@ -958,7 +937,7 @@ class DatabaseHandler():
 			machines.append(machine[0])
 		return(machines)#return the list of machines
 	def getPrinters(self):
-		query = "SELECT name FROM machines where relay !='False'"
+		query = "SELECT name FROM machines where relay like 'ps%'"
 		self.cur.execute(query)
 		result = self.cur.fetchall()
 		machines = []
@@ -1171,6 +1150,11 @@ class EnvisionServer():
 		#seperate variables for each database. This isn't necessary but makes it explicit which DB operation is being performed
 		self.oecDB = DatabaseHandler(self,"oec") #OECs DB
 		self.envisionDB = DatabaseHandler(self,"envision")#EnVision DB related to machines, classes, and users
+		self.ps1 = SmartPowerStrip('192.168.111.11') #PowerStrip-1 TAZ4's and TAZ5
+		self.ps2 = SmartPowerStrip('192.168.111.12') #PowerStrip-2 TAZ6's
+		self.ps3 = SmartPowerStrip('192.168.111.13') #PowerStrip-3 TAZ_MINI 1-6
+		self.ps4 = SmartPowerStrip('192.168.111.14') #PowerStrip-4 TAZ_MINI 7-8
+		
 
 def closeUp(msg,event):
 #function to close the socket and terminate all active threads

@@ -174,7 +174,7 @@ class MainWindow(wx.Frame):
 					json.dump(openAccessSave,file,indent=4,sort_keys=True)
 				return
 			elif result == wx.ID_YES:
-				db = MySQLdb.connect(host="envision-local.dynamic.ucsd.edu",user=app.passDict['envision-user'],passwd=app.passDict['envision-pass'],db="envision_control")
+				db = MySQLdb.connect(host="envision-local.ucsd.edu",user=app.passDict['envision-user'],passwd=app.passDict['envision-pass'],db="envision_control")
 				db.autocommit(True)
 				cur = db.cursor()
 				query = "DELETE FROM oa_hours"
@@ -264,7 +264,7 @@ class EnVisionScheduling(wx.App):
 			wx.MessageBox('Password File does not exist','ERROR')
 			sys.exit(1)
 		
-		db = MySQLdb.connect(host="envision-local.dynamic.ucsd.edu",user=self.passDict['envision-user'],passwd=self.passDict['envision-pass'],db="envision_control")
+		db = MySQLdb.connect(host="envision-local.ucsd.edu",user=self.passDict['envision-user'],passwd=self.passDict['envision-pass'],db="envision_control")
 		db.autocommit(True)
 		cur = db.cursor()
 		query = "SELECT day,startTime,endTime FROM oa_hours"

@@ -479,6 +479,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			printLength = machineValues[4]
 			user = machineValues[5]
 			machineStatus = machineValues[6]
+			machineAlias = machineValues[7]
 		if user is None:
 			if machineStatus.upper() == "FALSE":
 				errorInfo = "|".join([info,"OFFLINE"])
@@ -937,12 +938,13 @@ class DatabaseHandler():
 			machines.append(machine[0])
 		return(machines)#return the list of machines
 	def getPrinters(self):
-		query = "SELECT name FROM machines where relay like 'ps%'"
+		query = "SELECT name,alias FROM machines where relay like 'ps%'"
 		self.cur.execute(query)
 		result = self.cur.fetchall()
 		machines = []
 		for machine in result:
 			machines.append(machine[0])
+			machines.append(machine[1])
 		return(machines)#return the list of machines
 	def getLaptops(self,cabinet):
 		endNum = str(16 * cabinet - 1)
@@ -975,7 +977,7 @@ class DatabaseHandler():
 		if machine.startswith("LAPTOP"):
 			query = 'SELECT name,starttime,user,status FROM laptops WHERE name="'+machine+'"'
 		else:
-			query = 'SELECT name,relay,starttime,thread,printlength,user,status FROM machines WHERE name="'+machine+'"'
+			query = 'SELECT name,relay,starttime,thread,printlength,user,status,alias FROM machines WHERE name="'+machine+'"'
 		logger.debug("Execute query %s",query)
 		self.cur.execute(query)
 		values = self.cur.fetchall()

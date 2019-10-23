@@ -15,7 +15,7 @@ else:
 	GTK = True
 	MSW = False
 
-VERSION = "401"
+VERSION = "402"
 MINIMUMFONTSIZE = 4
 NUMPRINTERS = 16
 #SERVERADDRESS = 'localhost'
@@ -288,7 +288,7 @@ class SimplePopupFrame(wx.Frame):
 	def StatusChange(self,event):
 		#print "status change"
 		for machineNum, machine in enumerate(app.frame.bitmap_buttons):
-			machineName = machine.sizer.GetStaticBox().GetLabel()
+			machineName = machine.machine
 			if machineName == self.machine:
 				if app.frame.bitmap_buttons[machineNum].status == "ENABLED":
 					app.adminFrame.socketWorker.sendEvent(["EVT_CHANGE_STATUS",self.machine,app.signOnFrame.userIDnumber,"FALSE"])
@@ -495,7 +495,7 @@ class popupFrame(wx.Frame):
 	def StatusChange(self,event):
 		#print "status change"
 		for machineNum, machine in enumerate(app.frame.bitmap_buttons):
-			machineName = machine.sizer.GetStaticBox().GetLabel()
+			machineName = machine.machine
 			if machineName == self.machine:
 				if app.frame.bitmap_buttons[machineNum].status == "ENABLED":
 					app.adminFrame.socketWorker.sendEvent(["EVT_CHANGE_STATUS",self.machine,app.signOnFrame.userIDnumber,"FALSE"])
@@ -660,127 +660,8 @@ class MainWindow(wx.Frame):
 		self.SetBackgroundStyle(wx.BG_STYLE_ERASE)
 		self.Bind(wx.EVT_ERASE_BACKGROUND, self.OnEraseBackground)
 		
-		
-		
-		
-		#~ #i don't know what this does
-		#~ self.dirname = ' '
-		#~ styleFlags = wx.STAY_ON_TOP# | wx.NO_BORDER# | wx.FRAME_NO_TASKBAR
-		#~ if GTK:
-			#~ styleFlags = wx.DEFAULT_FRAME_STYLE | wx.STAY_ON_TOP
-		#~ wx.Frame.__init__(self, parent, title = title, style=styleFlags)
-		#~ color = "light gray"
-		#~ self.adminMode = False
-		#~ self.Bind(wx.EVT_CLOSE, self.OnClose)
-		#~ self.panel = wx.Panel(self, wx.ID_ANY,style=wx.WANTS_CHARS)
-		
-		#~ self.mainSizer = wx.BoxSizer(wx.VERTICAL)
-
-		#~ self.grid_sizer = wx.GridSizer(app.grids, app.grids, app.grid_gap, app.grid_gap)
-		#~ printerInfoFont = wx.Font(app.printerFontSize,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_BOLD)
-
-		#~ self.printerPanels = []
-		#~ self.sizers=[]
-		#~ for i in xrange(NUMPRINTERS):
-			#~ self.printerPanels.append(wx.Panel(self.panel, wx.ID_ANY))
-			#~ this = self.printerPanels[-1]
-			#~ this.sizer = wx.StaticBoxSizer(wx.StaticBox(this, wx.ID_ANY, "THIS IS A PRINTER"), wx.VERTICAL)
-			#~ this.label = wx.StaticText(this, label="----------------------------------------",style=wx.ALIGN_CENTRE_HORIZONTAL|wx.ST_NO_AUTORESIZE)
-			#~ this.label.SetFont(printerInfoFont)
-			#~ this.sizer.AddStretchSpacer()
-			#~ this.sizer.Add(this.label,0, wx.CENTER)# | wx.EXPAND, 0)
-			#~ this.SetSizer(this.sizer)
-			#~ this.seconds2Expire = False
-			#~ this.bitmap = app.bitmaps["default"]
-			#~ this.SetBackgroundColour(color)
-			#~ this.SetBackgroundStyle(wx.BG_STYLE_ERASE)
-			#~ this.Bind(wx.EVT_ERASE_BACKGROUND, self.OnEraseBackground)
-			#~ self.grid_sizer.Add(this,1,wx.EXPAND,0)
-
-		
-		#~ #self.mainSizer = wx.BoxSizer(wx.HORIZONTAL)
-		#~ self.brandSizer = wx.BoxSizer(wx.HORIZONTAL)
-		#~ brandingLabel = envisionVersion
-		#~ instructions = "\n **** SIGN IN TO CONTINUE **** \n"
-		#~ self.brand = wx.StaticText(self,label=brandingLabel,style=wx.ALIGN_CENTER_HORIZONTAL | wx.ST_NO_AUTORESIZE)
-		#~ self.instructions1 = wx.StaticText(self,label=instructions,style=wx.ALIGN_CENTER_HORIZONTAL | wx.ST_NO_AUTORESIZE)
-		#~ self.instructions2 = wx.StaticText(self,label=instructions,style=wx.ALIGN_CENTER_HORIZONTAL | wx.ST_NO_AUTORESIZE)
-		#~ sizer1 = wx.BoxSizer(wx.VERTICAL)
-		#~ sizer2 = wx.BoxSizer(wx.VERTICAL)
-		#~ sizer3 = wx.BoxSizer(wx.VERTICAL)
-		
-		#~ #self.brand = wx.StaticText(self,label=brandingLabel,style=wx.ALIGN_CENTRE|wx.ST_NO_AUTORESIZE)
-		#~ #self.brandSizer.Add(brand,1,wx.CENTER)
-		#~ self.panel.SetSizer(self.grid_sizer)
-		#~ self.mainSizer.Add(self.panel, 1, wx.EXPAND, 0)
-		#~ sizer1.Add(self.instructions1, 0, wx.ALIGN_CENTER, 0)
-		#~ sizer2.Add(self.brand, 0, wx.ALIGN_CENTER, 0)
-		#~ sizer3.Add(self.instructions2, 0, wx.ALIGN_CENTER, 0)
-		
-		#~ self.brandSizer.Add(sizer1,1,wx.EXPAND,0)
-		#~ self.brandSizer.Add(sizer2,1,wx.EXPAND,0)
-		#~ self.brandSizer.Add(sizer3,1,wx.EXPAND,0)
-		
-		#~ self.mainSizer.Add(self.brandSizer,0, wx.ALIGN_CENTER | wx.EXPAND, 0)
-	
-		#~ brandingFont = wx.Font(14, wx.DECORATIVE, wx.ITALIC, wx.LIGHT)
-		#~ self.brand.SetFont(brandingFont)
-		#~ self.instructions1.SetFont(printerInfoFont)
-		#~ self.instructions2.SetFont(printerInfoFont)
-		
-		#~ self.instructions1.SetForegroundColour("red")
-		#~ self.instructions2.SetForegroundColour("red")		
-		
-		#~ self.SetSizer(self.mainSizer)
-		
-		#~ self.Centre()
-		#~ self.Layout()
-
-		#~ pub.subscribe(self.socketListener, "signOnListener")
-		
-		
-		#~ self.socketWorker = SocketThread(self,None)
-		#~ self.socketWorker.start()
-		#~ self.shiftSet = False
-		#~ if GTK:
-			#~ #self.panel = wx.Panel(self, wx.ID_ANY)
-			#~ #self.panel.Bind(wx.EVT_CHAR, self.onKeyPress)
-			#~ self.Bind(wx.EVT_CHAR_HOOK,self.onKeyPress)
-			#~ #self.panel.Bind(wx.EVT_KEY_DOWN,self.onKeyPress)
-			
-			#~ #self.panel.SetFocusIgnoringChildren()
-			#~ #self.Bind(wx.EVT_SET_FOCUS,self.onFocus)
-			#~ #self.Bind(wx.EVT_CHILD_FOCUS,self.onFocus)
-			#~ #self.panel.Bind(wx.EVT_KILL_FOCUS, self.onFocusLost)
-		#~ #MSW doesn't like key capture in panels
-		#~ elif MSW:
-			#~ self.Bind(wx.EVT_CHAR, self.onKeyPress)
-			#~ self.SetFocus()
-		#~ else:
-			#~ wx.MessageBox('Platform Not Supported','ERROR')
-			#~ self.Destroy()
-			#~ sys.exit(1)
-		#~ self.panel.SetBackgroundColour(color)
-
 	def onFocus(self,event):
-		#print self.FindFocus()
 		self.panel.SetFocus()
-		#self.panel.SetFocusIgnoringChildren()
-		#print "This is main panel: "+ str(self.FindFocus())
-	#~ def OnEraseBackground(self, event):
-		#~ panel = event.GetEventObject()
-		#~ panelSize = panel.GetSize()
-		#~ bitmapSize = panel.bitmap.GetSize()
-		#~ dc = event.GetDC()
-		#~ if not dc:
-			#~ print "not dc"
-			#~ dc = wx.ClientDC(self)
-			#~ rect = self.GetUpdateRegion().GetBox()
-			#~ dc.SetClippingRect(rect)
-		#~ dc.Clear()
-		#~ xStart = (panelSize[0] - bitmapSize[0]) / 2
-		#~ yStart = (panelSize[1] - bitmapSize[1]) / 2
-		#~ dc.DrawBitmap(panel.bitmap, xStart,yStart)
 	def OnEraseBackground(self, evt):
 		dc = evt.GetDC()
 		if not dc:
@@ -935,8 +816,11 @@ class MainWindow(wx.Frame):
 		#extraneous info is often bundled together in one string to keep the reply packet uniform
 		if command == "EVT_CONNECT":
 			machines = []
-			machines.extend(info.split("|"))
+			machines.extend(info.split("|"))#parse out the names into a list
+			machinesIter = iter(machines)#create an iterable
+			machines = zip(machinesIter,machinesIter)#use the iterable to create a list of tuples (name,alias)
 			app.frame.setupMachines(machines)
+			return
 		elif command == "EVT_SETUP":
 			pass
 		elif command == "EVT_CHECKID":
@@ -1029,6 +913,8 @@ class PrinterFrame(wx.Frame):
 			this.expireTimer = CountDownThread(self.bitmap_buttons[-1])
 			#self.bitmap_buttons[-1].SetBackgroundColour('#9f9f5f')
 			this.SetBackgroundColour(color)
+			this.machine = "NONE"
+			this.alias = "NONE"
 			this.status = "ENABLED"
 			#self.Bind(wx.EVT_TIMER,self.countDown2Expire,self.bitmap_buttons[-1].expireTimer)
 			this.Bind(wx.EVT_BUTTON, self.onClick)
@@ -1133,9 +1019,13 @@ class PrinterFrame(wx.Frame):
 	def ResetMachine(self,button):
 		app.frame.lock.acquire()
 		machineNum = app.frame.bitmap_buttons.index(button)
-		button.seconds2Expire = False
-		btnSizer = button.GetContainingSizer().GetStaticBox()
-		machine = btnSizer.GetLabel()
+		machine = app.frame.bitmap_buttons[machineNum].machine
+		#button.seconds2Expire = False
+		#btnSizer = button.GetContainingSizer().GetStaticBox()
+		#machine = btnSizer.GetLabel()
+		#for b in self.bitmap_buttons:
+		#	if machine == b.alias:
+		#		machine = b.machine
 		button.seconds2Expire = False
 		button.expireTimer = CountDownThread(button)
 		button.Enable()
@@ -1276,6 +1166,9 @@ class PrinterFrame(wx.Frame):
 		btn = event.GetEventObject()
 		btnSizer = btn.GetContainingSizer().GetStaticBox()
 		machine = btnSizer.GetLabel()
+		for button in self.bitmap_buttons:
+			if machine == button.alias:
+				machine = button.machine
 		status = btn.status
 		self.activeInput = True
 		self.inputFrame = popupFrame(self,machine)
@@ -1337,6 +1230,9 @@ class PrinterFrame(wx.Frame):
 		btn = event.GetEventObject()
 		btnSizer = btn.GetContainingSizer().GetStaticBox()
 		machine = btnSizer.GetLabel()
+		for button in self.bitmap_buttons:
+			if machine == button.alias:
+				machine = button.machine
 		self.socketWorker.sendEvent(["EVT_CHECKID",machine,app.signOnFrame.userIDnumber,"False"])
 		
 	#end def
@@ -1406,31 +1302,36 @@ class PrinterFrame(wx.Frame):
 
 	def setupMachines(self,machines):
 		#machineNum = 0
-		for machineNum, machine in enumerate(machines):
+		#print machines
+		for machineNum, (machineName,machineAlias) in enumerate(machines):
 			this = app.frame.bitmap_buttons[machineNum]
 			that = app.adminFrame.bitmap_buttons[machineNum]
-			this.sizer.GetStaticBox().SetLabel(machine)
-			this.printerInfo.SetLabel(machine)
-			that.sizer.GetStaticBox().SetLabel(machine)
-			that.printerInfo.SetLabel(machine)
-			#app.signOnFrame.printerPanels[machineNum].sizer.GetStaticBox().SetLabel(machine)
-			#app.signOnFrame.printerPanels[machineNum].label.SetLabel(machine)
-			if machine.startswith("MAKERBOT"):
+			this.sizer.GetStaticBox().SetLabel(machineAlias.upper())
+			this.printerInfo.SetLabel(machineName)
+			that.sizer.GetStaticBox().SetLabel(machineAlias.upper())
+			that.printerInfo.SetLabel(machineName)
+			this.machine = machineName
+			this.alias = machineAlias.upper()
+			that.machine = machineName
+			that.alias = machineAlias.upper()
+			#app.signOnFrame.printerPanels[machineNum].sizer.GetStaticBox().SetLabel(machineName)
+			#app.signOnFrame.printerPanels[machineNum].label.SetLabel(machineName)
+			if machineName.startswith("MAKERBOT"):
 				this.SetBitmap(app.bitmaps["mbEnabled"])
 				this.SetBitmapDisabled(app.bitmaps["mbDisabled"])
 				that.SetBitmap(app.bitmaps["mbEnabled"])
 				that.SetBitmapDisabled(app.bitmaps["mbDisabled"])
-			elif machine.startswith("LAPTOP"):
+			elif machineName.startswith("LAPTOP"):
 				this.SetBitmap(app.bitmaps["laptopEnabled"])
 				this.SetBitmapDisabled(app.bitmaps["laptopDisabled"])
 				that.SetBitmap(app.bitmaps["laptopEnabled"])
 				that.SetBitmapDisabled(app.bitmaps["laptopDisabled"])
-			elif machine.startswith("MAKER_MINI"):
+			elif machineName.startswith("MAKER_MINI"):
 				this.SetBitmap(app.bitmaps["mbMiniEnabled"])
 				this.SetBitmapDisabled(app.bitmaps["mbMiniDisabled"])
 				that.SetBitmap(app.bitmaps["mbMiniEnabled"])
 				that.SetBitmapDisabled(app.bitmaps["mbMiniDisabled"])
-			elif machine.startswith("TAZ_MINI"):
+			elif machineName.startswith("TAZ_MINI"):
 				this.SetBitmap(app.bitmaps["tazMiniEnabled"])
 				this.SetBitmapDisabled(app.bitmaps["tazMiniDisabled"])
 				that.SetBitmap(app.bitmaps["tazMiniEnabled"])
@@ -1440,7 +1341,7 @@ class PrinterFrame(wx.Frame):
 				this.SetBitmapDisabled(app.bitmaps["tazDisabled"])
 				that.SetBitmap(app.bitmaps["tazEnabled"])
 				that.SetBitmapDisabled(app.bitmaps["tazDisabled"])
-			self.socketWorker.sendEvent(["EVT_SETUP",MACHINENAME,"False",machine])
+			self.socketWorker.sendEvent(["EVT_SETUP",MACHINENAME,"False",machineName])
 			#machineNum += 1
 		#print machineNum, NUMPRINTERS
 		machineNum += 1
@@ -1474,13 +1375,17 @@ class PrinterFrame(wx.Frame):
 		
 		if command == "EVT_CONNECT":
 			machines = []
-			machines.extend(info.split("|"))
+			machines.extend(info.split("|"))#parse out the names into a list
+			machinesIter = iter(machines)#create an iterable
+			machines = zip(machinesIter,machinesIter)#use the iterable to create a list of tuples (name,alias)
+			print "DEBUG"
+			print machines
 			self.setupMachines(machines)
 			return
 		elif command == "EVT_SETUP":
 			#for machine in app.signOnFrame.printerPanels:
 			for machineNum, machine in enumerate(app.frame.bitmap_buttons):
-				machineName = machine.sizer.GetStaticBox().GetLabel()
+				machineName = machine.machine
 				if machineName == infoList[0]:
 					if machineName.startswith("MAKERBOT"):
 						bmp = app.bitmaps["mbEnabled"]
@@ -1603,7 +1508,7 @@ class PrinterFrame(wx.Frame):
 						app.frame.socketWorker.sendEvent(["EVT_SETUP",MACHINENAME,"False",machine])
 						#app.adminFrame.inputFrame.onClose(wx.EVT_BUTTON)
 						for machineNum, button in enumerate(app.frame.bitmap_buttons):
-							machineName = button.sizer.GetStaticBox().GetLabel()
+							machineName = button.machine
 							if machineName == infoList[2]:
 								#machineIndex = button.index(button)
 								app.adminFrame.bitmap_buttons[machineNum].status = "MAINTENANCE"
@@ -1628,7 +1533,7 @@ class PrinterFrame(wx.Frame):
 			elif infoList[0]=="ADDED":
 			#if an ADMIN added time for the user
 				for machineNum, machine in enumerate(app.frame.bitmap_buttons):
-					machineName = machine.sizer.GetStaticBox().GetLabel()
+					machineName = machine.machine
 					if machineName == infoList[3]:
 						app.frame.lock.acquire()
 						try:
@@ -1649,7 +1554,7 @@ class PrinterFrame(wx.Frame):
 		
 		elif command == "EVT_FREE_TIME":
 			for machineNum, machine in enumerate(app.frame.bitmap_buttons):
-				machineName = machine.sizer.GetStaticBox().GetLabel()
+				machineName = machine.machine
 				if machineName == infoList[2]:
 					app.frame.lock.acquire()
 					try:
@@ -1668,7 +1573,7 @@ class PrinterFrame(wx.Frame):
 		
 		elif command == "EVT_RELEASE":
 			for machineNum, machine in enumerate(app.frame.bitmap_buttons):
-				machineName = machine.sizer.GetStaticBox().GetLabel()
+				machineName = machine.machine
 				if machineName == infoList[0]:
 					self.ResetMachine(machine)
 					self.socketWorker.sendEvent(["EVT_SETUP",MACHINENAME,"False",machineName])
@@ -1677,7 +1582,7 @@ class PrinterFrame(wx.Frame):
 		elif command == "EVT_END":
 		#called if an ADMIN cancels a print
 			for machineNum, machine in enumerate(app.frame.bitmap_buttons):
-				machineName = machine.sizer.GetStaticBox().GetLabel()
+				machineName = machine.machine
 				if machineName == infoList[1]:
 					machine.expireTimer.stop()
 					break
@@ -1688,7 +1593,7 @@ class PrinterFrame(wx.Frame):
 		elif command == "EVT_CHANGE_STATUS":
 		#change in and out of maintenance mode
 			for machineNum, machine in enumerate(app.frame.bitmap_buttons):
-				machineName = machine.sizer.GetStaticBox().GetLabel()
+				machineName = machine.machine
 				if machineName == infoList[1]:
 					#print machineName
 					#machineIndex = app.frame.sizers.index(machine)
@@ -1738,7 +1643,7 @@ class PrinterFrame(wx.Frame):
 		elif command == "EVT_SETUP":
 			if errorList[1] == "OFFLINE":
 				for num, machine in enumerate(self.bitmap_buttons):
-					machineName = machine.sizer.GetStaticBox().GetLabel()
+					machineName = machine.machine
 					if machineName == errorList[0]:
 						machine.printerInfo.SetLabel("** OFFLINE **")
 						app.adminFrame.bitmap_buttons[num].printerInfo.SetLabel("** OFFLINE **")
@@ -1763,7 +1668,7 @@ class PrinterFrame(wx.Frame):
 						break
 			elif errorList[1] == "USER":
 				for num, machine in enumerate(self.bitmap_buttons):
-					machineName = machine.sizer.GetStaticBox().GetLabel()
+					machineName = machine.machine
 					if machineName == errorList[0]:
 						if machineName.startswith("MAKERBOT"):
 							bmp = "mbInUse"

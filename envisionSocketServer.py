@@ -9,7 +9,7 @@ May 2016
 All Rights Reserved
 """
 
-version = "v300"
+version = "v302"
 """
 --300 swapped out custom relay boards for KasaSMartPowerStrips
 -- 223 added laptop kiosk functionalities
@@ -55,7 +55,7 @@ handler = logging.handlers.TimedRotatingFileHandler("/var/log/envision/socketSer
 formatter=logging.Formatter("%(levelname)s:%(asctime)s:%(threadName)s:%(message)s")
 handler.setFormatter(formatter)
 logger.addHandler(handler)
-logger.setLevel(logging.INFO)#DEBUG, INFO, WARNING, etc
+logger.setLevel(logging.DEBUG)#DEBUG, INFO, WARNING, etc
 #logger.basicConfig(format="%(levelname)s:%(asctime)s:%(threadName)s:%(message)s", filename="/var/log/envision/socketServer.log", level=logging.INFO)
 
 
@@ -204,8 +204,10 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		if threadName:
 			#turn off machine, this also ends the thread, and releases the machine / user
 			#don't call stop directly, or thread will keep running in the background...
+			getattr(envisionSS,threadName).timeExpired = True
 			getattr(envisionSS,threadName).runFlag = False
 			endCount = 0
+			time.sleep(1)
 			#make sure the thread ended and the relay shutdown
 			#this only tries 5 times, while shutting off the relay tries indefinitely
 			#but this isn't threaded and I don't want the main program to hang...
@@ -213,7 +215,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			#break when thread is cleared or after 5 attempts
 				machineValues = envisionSS.envisionDB.getValues(machine)
 				threadName = machineValues[3]
-				if not threadName or endCount >=5:
+				if not threadName or endCount >=3:
 					break
 				else:
 					logger.warning("%s not ending. Attempt %s",threadName, endCount)
@@ -279,7 +281,8 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			elif idUsed == "OCCUPIED":
 			#if machine is in use and the user is not the same, not ok
 				returnInfo.append("DENY")
-				returnInfo.append("OCCUPIED")
+				addMessage = "|".join(["OCCUPIED",machine])
+				returnInfo.append("addMessage")
 		else:
 			returnInfo.append("OK")
 			returnInfo.append(machine)
@@ -679,6 +682,7 @@ class TimerThread(threading.Thread):
 		self.killFlag = False #kill flag can be set externally and allows the thread to end, but not clear the timer...timer can be resumed at a later time
 		self.printLength = 0
 		self.timeExpired = False
+		self.killCount = 0
 	#required function called by start()
 	def run(self):
 		timeStamp = datetime.datetime.strptime(self.machineValues[2],'%Y%m%d-%H:%M:%S')
@@ -686,20 +690,24 @@ class TimerThread(threading.Thread):
 		while self.runFlag:
 		#run until timer expires or kill flag is set
 			now = datetime.datetime.now()
-			logger.debug("counting down thread %s",self.machine)
+			#logger.debug("counting down thread %s",self.machine)
 			if (timeStamp + self.printLength < now):
 			#check if the timer has expired, and end the thread by setting the run flag...kills the while loop
 				
 				self.runFlag = False
 				self.timeExpired = True
-				logger.debug("thread expired ",self.machine)
+				logger.debug("thread expired %s",self.machine)
 			else:
 				time.sleep(1)
-		if self.killFlag == False or self.timeExpired == True:
+		if self.killFlag == False and self.timeExpired == True:
 		#the killflag is set if the theard is ended before the timer has expired (for restarting the server, etc)
 		#allows the thread to be restarted later, with all of the timestamps in place
 		#if still False, call stop() to turn off the relay
+			
 			self.stop()
+			logger.debug("thread stopped. Relay activated for: %s",self.machine)
+		else:
+			logger.debug("thread stopped. Relay still on: %s",self.machine)
 	#a kill function, that does not shut off the relay but stops the thread
 	#allows the program to exit cleanly without killing prints
 	def kill(self):
@@ -726,17 +734,36 @@ class TimerThread(threading.Thread):
 				#time.sleep(5)
 				#self.stop()
 
-		else:
+		elif success=="FAILED":
 		#if the tunnel failed, wait 10 seconds and try again. This will keep trying until the relay turns off successfully
 			logger.warning("%s Failed to Stop", self.machine)
-			#time.sleep(10)
-			#self.stop()
+			self.killCount +=1
+			if self.killCount >= 5:
+				logger.warning("%s FORCEFULLY STOPPED", self.machine)
+				e4Connect = envisionSS.envisionDB.connectDB()
+				if e4Connect:
+					envisionSS.envisionDB.logEnd(self.machine)
+					#clear the machine properties to release the machine and the user
+					envisionSS.envisionDB.release(self.machine)
+					self.killCount = 0
+				else:
+					logger.critical("Failed to connect to local DB for FORCE-KILL...retrying")
+					time.sleep(5)
+					self.stop()
+			else:
+				time.sleep(10)
+				self.stop()
 	
 	
 	def kasaRelay(self,command):
-		logger.debug("ATTEMPTING TO MODIFY THE RELAY")
 		power_strip = self.machineValues[1]
-		returnVal = getattr(envisionSS,power_strip).toggle_plug(command,plug_name=self.machine)
+		logger.debug("ATTEMPTING TO MODIFY THE RELAY on: %s", power_strip)
+		try:
+			returnVal = getattr(envisionSS,power_strip).toggle_plug(command,plug_name=self.machine)
+		except Exception as e:
+			logger.exception("Fatal error in kasaRelay: %s",str(e))
+			returnVal = "FAILED"
+		logger.debug("Power Strip return value is %s", returnVal)
 		return returnVal
 	
 class DatabaseHandler():
@@ -814,7 +841,7 @@ class DatabaseHandler():
 		elif machine.startswith("VAC"):
 			cred = "vc"
 		elif machine.startswith("DRILL"):
-			cred = "dp"
+			cred = "pm"
 		else:
 			cred = "waiver"						
 		#DB query pulls all relevant details from OEC DB

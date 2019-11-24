@@ -572,11 +572,14 @@ class MyFrame(wx.Frame):
 		for page in range(self.notebook.GetPageCount()):
 			self.notebook.ChangeSelection(page)
 			sheet = self.notebook.GetPageText(page)
-			if sheet.split(' ')[0] != machine:
+			#print sheet
+			if sheet.split('(')[0] != machine:
 				machine = sheet.split(' ')[0]
+				#print machine
 				book.sheet = book.add_sheet(machine)
-			sheet = sheet.split(' ')[1]
-			book.sheet = book.add_sheet(sheet)
+			#sheet = sheet.split(' ')[1]
+			#print sheet
+			#book.sheet = book.add_sheet(sheet)
 			thisList = self.notebook.GetChildren()[page].GetChildren()[0]
 			rows = thisList.GetItemCount()
 			columns = thisList.GetColumnCount()

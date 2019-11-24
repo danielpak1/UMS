@@ -108,7 +108,7 @@ class MainWindow(wx.Frame):
 		tempBox=(wx.BoxSizer(wx.HORIZONTAL))
 		updateTime = "Last Updated @ " + now.strftime("%H:%M")
 		self.updateText=(wx.StaticText(self.panel,-1,updateTime,style = wx.ALIGN_CENTER_HORIZONTAL))
-		updateFont = wx.Font(12,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_ITALIC,wx.FONTWEIGHT_NORMAL)
+		updateFont = wx.Font(16,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_BOLD)
 		self.updateText.SetFont(updateFont)
 		
 		
@@ -128,9 +128,9 @@ class MainWindow(wx.Frame):
 		self.mainSizer.Add(self.legendSizer,0,wx.EXPAND)
 		self.mainSizer.Add(wx.Size(0,20), 0)
 		
-		self.panel.Bind(wx.EVT_CHAR, self.onKeyPress)
+		self.panel.Bind(wx.EVT_CHAR_HOOK, self.onKeyPress)
 		self.panel.SetFocus()
-		
+		#self.Bind(wx.EVT_CHAR, self.onKeyPress)
 		self.mainSizer.SetSizeHints(self)
 		self.panel.SetSizerAndFit(self.mainSizer)
 		self.Centre()
@@ -149,24 +149,24 @@ class MainWindow(wx.Frame):
 		self.Freeze()
 		dbHandler.setOpenAccess()		
 		self.adjustDays()
-		updateTime = "Last Updated @ " + now.strftime("%H:%M")
-		self.updateText.SetLabel(updateTime)
 		self.panel.Update()
 		self.panel.Refresh()
 		self.panel.Layout()
 		self.Thaw()
 		if self.refreshTimer.IsRunning() is False:
-			if now.minute % 16 == 0:
-				self.refreshTimer.Start(15 * 60 * 1000)
+			if now.minute % 5 == 0:
+				self.refreshTimer.Start(5 * 60 * 1000)
+				print "next refresh in 5 minutes"
 			else:
-				nextFire = 16 - (now.minute % 16)
+				nextFire = 5 - (now.minute % 5)
 				self.refreshTimer.Start(nextFire * 60 * 1000, True)
+				print "next refresh in " +str(nextFire) + " minutes"
 		time.sleep(2)
 		self.takeScreenShot()
 		self.panel.SetFocus()
 	def takeScreenShot(self):
 		""" Takes a screenshot of the screen at give pos & size (rect). """
-		print 'Taking screenshot...'
+		#print 'Taking screenshot...'
 		rect = self.GetRect()
 		# see http://aspn.activestate.com/ASPN/Mail/Message/wxpython-users/3575899
 		# created by Andrea Gavana
@@ -213,7 +213,7 @@ class MainWindow(wx.Frame):
 		img = bmp.ConvertToImage()
 		fileName = "./schedule.png"
 		img.SaveFile(fileName, wx.BITMAP_TYPE_PNG)
-		print '...saving as png!'
+		#print '...saving as png!'
 		self.uploadFile()
 	def uploadFile(self):
 		try:
@@ -229,7 +229,9 @@ class MainWindow(wx.Frame):
 			print ("Server Connection FAILED", e)
 		
 	def onKeyPress(self, event):
+		#print "in onKeyPress"
 		keycode = event.GetKeyCode()
+		#print keycode
 		if keycode == wx.WXK_ESCAPE:
 			self.Destroy()
 		else:
@@ -274,7 +276,7 @@ class DatabaseHandler():
 			self.openAccess[str(i)]=[]
 	
 	def loadOpenAccess(self):
-		db = MySQLdb.connect(host="envision-local.dynamic.ucsd.edu",user=passDict['envision-user'],passwd=passDict['envision-pass'],db="envision_control")
+		db = MySQLdb.connect(host="envision-local",user=passDict['envision-user'],passwd=passDict['envision-pass'],db="envision_control")
 		db.autocommit(True)
 		cur = db.cursor()
 		query = "SELECT day,startTime,endTime FROM oa_hours"
@@ -321,14 +323,41 @@ class DatabaseHandler():
 											app.frame.buttons[i].SetBackgroundColour("forest green")
 										app.frame.buttons[i].Enable(True)
 										app.frame.buttons[i].SetForegroundColour(wx.WHITE)
+		self.isReserved(reservedDict)
+	def isReserved(self, reservedDict):
+		now = datetime.datetime.now()
+		time24 = datetime.datetime.strptime(now.strftime("%H%M"),'%H%M')
+		dow = str(now.weekday())
+		reserved=False
+		for day in self.openAccess:
+			if day in reservedDict:
+				if day == dow:
+					for reservation in reservedDict[day]:
+						reservedStart = datetime.datetime.strptime(reservation[0],'%H%M')
+						reservedEnd = datetime.datetime.strptime(reservation[1],'%H%M')
+						userID = list(reservation[2])
+						if time24 >= reservedStart and time24 < reservedEnd:
+							reserved=True
+							for i, letter in enumerate(reversed(userID)):
+								if i>3 and i<len(userID)-1:
+									userID[len(userID)-1-i]="*"
+							if userID[0]!="A":
+								userID[0]="*"
+								userID.insert(0,"E")
+							currentReservation = "RESERVED FOR: " + "".join(userID)
+							app.frame.updateText.SetLabel(currentReservation)
+		if not reserved:
+			updateTime = "Last Updated @ " + now.strftime("%H:%M")
+			app.frame.updateText.SetLabel(updateTime)
+		
 	def getReservedTimes(self):
 		reservedDict = {}
 		today = datetime.datetime.now()
 		endDay = today + datetime.timedelta(days=6)
 		today = today.strftime("%Y-%m-%d")
 		endDay = endDay.strftime("%Y-%m-%d")
-		query = 'SELECT reserve_date,startTime,endTime FROM laser_reserve WHERE reserve_date >= CURDATE() AND reserve_date <="'+endDay+'"'
-		db = MySQLdb.connect(host='envision-local.dynamic.ucsd.edu',user=passDict['envision-user'],passwd=passDict['envision-pass'],db="envision_control")
+		query = 'SELECT reserve_date,startTime,endTime,student_id FROM laser_reserve WHERE reserve_date >= CURDATE() AND reserve_date <="'+endDay+'"'
+		db = MySQLdb.connect(host='envision-local',user=passDict['envision-user'],passwd=passDict['envision-pass'],db="envision_control")
 		cur = db.cursor()
 		cur.execute(query)
 		results = cur.fetchall()
@@ -336,10 +365,11 @@ class DatabaseHandler():
 			day = str((datetime.datetime.strptime(result[0],'%Y-%m-%d')).weekday())
 			if day not in reservedDict:
 				reservedDict[day]=[]
-			reservedDict[day].append([])
 			startTime = result[1][:-3].replace(":",'')
 			endTime = result[2][:-3].replace(":",'')
-			reservedDict[day][-1].extend((startTime,endTime))
+			userID = result[3]
+			reserveTuple = (startTime,endTime,userID)
+			reservedDict[day].append(reserveTuple)
 		return reservedDict
 
 app = EnVisionScheduling(False)

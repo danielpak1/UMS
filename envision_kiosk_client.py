@@ -15,7 +15,7 @@ else:
 	GTK = True
 	MSW = False
 
-VERSION = "402"
+VERSION = "403"
 MINIMUMFONTSIZE = 4
 NUMPRINTERS = 16
 #SERVERADDRESS = 'localhost'
@@ -1746,6 +1746,7 @@ class PrinterFrame(wx.Frame):
 			errorMsg = "RELAY DID NOT RESPOND. Try Again"
 		elif command == "EVT_SINGLE_CHECK":
 			if errorList[0] == "OCCUPIED":
+				machine = errorList[1]
 				if MACHINENAME.startswith("LAPTOP"):
 					errorMsg = "\n\nThis laptop is in use. Please select a different machine\n"
 				else:

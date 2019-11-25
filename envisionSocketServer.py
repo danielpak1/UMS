@@ -9,7 +9,7 @@ May 2016
 All Rights Reserved
 """
 
-version = "v302"
+version = "v502"
 """
 --300 swapped out custom relay boards for KasaSMartPowerStrips
 -- 223 added laptop kiosk functionalities
@@ -34,11 +34,14 @@ check file on laptop machine....added some functionality for checking both MS db
 """
 #import calls
 import SocketServer #ability to open a socket and listen
-import csv, json, MySQLdb #use saved data 
+import csv, json
+import mysql.connector
+from mysql.connector.pooling import MySQLConnectionPool
+from mysql.connector import errors
 import os, sys #standard OS functions
 import threading, signal #thread spawning and killing
 import datetime, time #time functions and handling
-import paramiko #sftp / ssh capabilities
+#import paramiko #sftp / ssh capabilities
 import logging #logs to a file for
 from logging.handlers import TimedRotatingFileHandler
 from KasaSmartPowerStrip import SmartPowerStrip
@@ -299,17 +302,26 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			returnInfo.append("NOTFOUND")
 		return returnInfo
 	
-	def FreeTime(self,machine,info,threadName,printLength):
+	def FreeTime(self,machine,info,threadName,printLength,freeTime):
 		returnInfo = []
 		currentTime = int(printLength)
 		addedTime = datetime.timedelta(seconds=int(info))
 		newTime = str(currentTime+int(info))
+		if freeTime is None:
+			envisionSS.envisionDB.updateMachine(machine,"freeTime",str(printLength))
+		else:
+			freeTime = int(freeTime)
+			if int(newTime) > (freeTime * 2):
+				returnInfo.append("DENY")
+				returnInfo.append("EXCEEDED")
+				return returnInfo
 		getattr(envisionSS,threadName).printLength += addedTime #tricky method to access the thread...kind of like a pointer
 		envisionSS.envisionDB.updateMachine(machine,"printLength",newTime)
 		#newBalance = '{:,.2f}'.format(newBalance)
 		addMessage = "|".join(["FREE",info,machine])
 		returnInfo.append("OK")
 		returnInfo.append(addMessage)
+		
 		return returnInfo
 	def AddTime(self,machine,user,info,threadName,printLength):
 		returnInfo = []
@@ -534,9 +546,10 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		acceptedMachines = ["PRINTER","CASHIER","LAPTOP"]
 		if len(packet) == 4:
 		#verify packet integrity
-			e4Connect = envisionSS.envisionDB.connectDB()
-			oecConnect = envisionSS.oecDB.connectDB()
-			if e4Connect and oecConnect:
+			#e4Connect = envisionSS.envisionDB.connectDB()
+			#oecConnect = envisionSS.oecDB.connectDB()
+			#e4Connect = envisionSS.envisionDB.db.
+			if True:
 				goodMachine = True if machine.split("_")[0] in acceptedMachines else False
 				#laptopMachine = True if machine.split("_")[0] == "LAPTOP" else False
 				loggedMachine = self.CheckMachine(machine)
@@ -630,7 +643,8 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 						reply.extend(self.AddTime(machine, user, info[0], threadName, printLength))
 
 					elif command == "EVT_FREE_TIME":
-						reply.extend(self.FreeTime(machine, info[0], threadName, printLength))
+						freeTime = loggedMachine[8]
+						reply.extend(self.FreeTime(machine, info[0], threadName, printLength,freeTime))
 						
 					elif command == "EVT_ADD_USER":
 					#Fired if user is not in ledger
@@ -723,16 +737,9 @@ class TimerThread(threading.Thread):
 		if success['system']['set_relay_state']['err_code'] == 0:
 		#if the tunnel was a success
 			logger.info("%s STOPPED", self.machine)
-			#if envisionSS.envisionDB.cur is None:
-			e4Connect = envisionSS.envisionDB.connectDB()
-			if e4Connect:
-				envisionSS.envisionDB.logEnd(self.machine)
-				#clear the machine properties to release the machine and the user
-				envisionSS.envisionDB.release(self.machine)
-			else:
-				logger.warning("Failed to connect to local DB...retrying")
-				#time.sleep(5)
-				#self.stop()
+			envisionSS.envisionDB.logEnd(self.machine)
+			#clear the machine properties to release the machine and the user
+			envisionSS.envisionDB.release(self.machine)
 
 		elif success=="FAILED":
 		#if the tunnel failed, wait 10 seconds and try again. This will keep trying until the relay turns off successfully
@@ -740,20 +747,13 @@ class TimerThread(threading.Thread):
 			self.killCount +=1
 			if self.killCount >= 5:
 				logger.warning("%s FORCEFULLY STOPPED", self.machine)
-				e4Connect = envisionSS.envisionDB.connectDB()
-				if e4Connect:
-					envisionSS.envisionDB.logEnd(self.machine)
-					#clear the machine properties to release the machine and the user
-					envisionSS.envisionDB.release(self.machine)
-					self.killCount = 0
-				else:
-					logger.critical("Failed to connect to local DB for FORCE-KILL...retrying")
-					time.sleep(5)
-					self.stop()
+				envisionSS.envisionDB.logEnd(self.machine)
+				envisionSS.envisionDB.release(self.machine)
+				self.killCount = 0
 			else:
-				time.sleep(10)
+				logger.critical("Failed to connect to local DB for FORCE-KILL...retrying")
+				time.sleep(5)
 				self.stop()
-	
 	
 	def kasaRelay(self,command):
 		power_strip = self.machineValues[1]
@@ -776,48 +776,33 @@ class DatabaseHandler():
 			self.password = self.parent.passDict["db-pass"]
 			self.host = "db.eng.ucsd.edu"
 			self.database = "makerspace"
+			self.poolName = "makerspacePool"
 		elif location == "envision":
 			self.username = self.parent.passDict["envision-user"]
 			self.password = self.parent.passDict["envision-pass"]
 			self.host = "localhost"
 			self.database = "envision_control"
+			self.poolName = "envisionPool"
 		
 		#function connects to the appropriate DB, and sets the cursor and auto-commit variables
 	def connectDB(self):
 		#do i need a lock??
 		try:
-			self.db.open
+			self.db.pool_name
 		except AttributeError:
 		#Initial connection required
 			logger.debug("AttributeError on first DB access")
 			try:
-				self.db = MySQLdb.connect(host=self.host,user=self.username,passwd=self.password,db=self.database)
+				self.db = MySQLConnectionPool(host=self.host,user=self.username,passwd=self.password,db=self.database,pool_name=self.poolName,pool_size=15,pool_reset_session=False)
 			except Exception as e:
 				#need to add some error handling here for when the connection fails
 				logger.critical("Failed to connect to DB on first try, received %s", e)
 				return False
 			else:
-				self.db.autocommit(True) #changes made are committed on execution
-				self.cur = self.db.cursor() #set the cursor to the beginning of the DB
 				logger.info("New Connection to %s",self.host)
 		else:
-			try:
-				self.db.cursor().execute("SELECT VERSION()")
-			except Exception as e:
-				logger.warning("Failed to re-connect to DB, received %s", e)
-				try:
-					self.db = MySQLdb.connect(host=self.host,user=self.username,passwd=self.password,db=self.database)
-				except Exception as e:
-					logger.critical("Failed to re-connect to DB, received %s", e)
-					return False
-				else:
-					self.db.autocommit(True) #changes made are committed on execution
-					self.cur = self.db.cursor() #set the cursor to the beginning of the DB
-					logger.info("Connection to %s restarted",self.host)
-			else:
-				#self.db.autocommit(True) #changes made are committed on execution
-				self.cur = self.db.cursor() #set the cursor to the beginning of the DB
-				logger.debug("Connection to %s still alive",self.host)
+			logger.debug("Connection to %s still alive",self.host)
+
 		return True
 	#function to clean up the connection 
 	def closeDB(self):
@@ -825,6 +810,44 @@ class DatabaseHandler():
 		self.db = None
 		self.cur = None
 		logger.debug("DB Closed")
+	
+	def executeQuery(self,query, fetch=True, logID=False):
+		try:
+			thisCnx = self.db.get_connection()
+		except errors.PoolError:
+			for i in range(1,5):
+				time.sleep(1)
+				logger.warning("Not enough Pool Connections, retrying...%s",i)
+				try:
+					thisCnx = self.db.get_connection()
+				except errors.PoolError:
+					pass
+				else:
+					break
+			if i>=4:
+				return None
+		except errors.Errors as e:
+			logger.warning("Database has disconnected, retrying")
+			self.db.reconnect(attempts=5,delay=10)
+		else:
+			#print "connected"
+			#print query
+			thisCursor = thisCnx.cursor()
+			thisCursor.execute(query) #execute the query
+			if fetch:
+				result = thisCursor.fetchall()
+			else:
+				if logID:
+					query = 'SELECT LAST_INSERT_ID();'#keep the entry ID in a variable to use later
+					thisCursor.execute(query) #execute the query
+					result = thisCursor.fetchall()
+					result = str(result[0][0])
+				else:
+					result = None
+			thisCnx.commit()
+			thisCursor.close()
+			thisCnx.close()
+			return (result)#fetch all of the results 
 	
 	#check that the user ID exists, and that the appropriate training has been completed
 	def checkID(self,machine,user):
@@ -846,8 +869,7 @@ class DatabaseHandler():
 			cred = "waiver"						
 		#DB query pulls all relevant details from OEC DB
 		query = 'SELECT waiver,'+cred+',role,supervisor,dept,class_level,suspended FROM makerspace.users LEFT JOIN makerspace.users_access USING (user_id) WHERE (uceno ="'+userID+'" OR pid ="'+userID+'");'
-		self.cur.execute(query) #execute the query
-		results = self.cur.fetchall()#fetch all of the results 
+		results = self.executeQuery(query)
 		returnMsg = ["False","False","False","False","False","False","False"]#prepopulate a return value with False
 		#check each result
 		for result in results:
@@ -883,13 +905,14 @@ class DatabaseHandler():
 		userInfo = '","'.join([user, major, level, machine, startTime])
 		userInfo = '"'+userInfo+'"'
 		query = 'INSERT into log (user, major, level, machine, startTime) VALUES (' + userInfo + ')'
-		self.cur.execute(query)
-		query = 'SELECT LAST_INSERT_ID();'#keep the entry ID in a variable to use later
-		self.cur.execute(query)
-		logID = str(self.cur.fetchone()[0])
+		logID=self.executeQuery(query,False,True)
+		# query = 'SELECT LAST_INSERT_ID();'#keep the entry ID in a variable to use later
+		# result = self.executeQuery(query)
+		# logID = str(result[0][0])
+		#print logID
 		if machine.startswith("FRONT"):
 			query = 'UPDATE log set endTime = "' +startTime+'" WHERE logID="'+logID+'"'
-			self.cur.execute(query)
+			self.executeQuery(query,False)
 		logger.info("LOG UPDATED %s STARTED WITH LOGID %s ",machine,logID) #debug info
 		return logID #pass the entry ID around, to use later for logEnd()
 	#append a log entry for user and machine and amount of time used	
@@ -897,11 +920,11 @@ class DatabaseHandler():
 		#the logID was added to the machine table, fetch it from the machine, and update the log that has that ID
 		table = "laptops" if machine.startswith("LAPTOP") else "machines"
 		query = 'SELECT logID from ' + table + ' WHERE name = "' +machine+'"'
-		self.cur.execute(query)
-		logID = str(self.cur.fetchone()[0])
+		result = self.executeQuery(query)
+		logID = str(result[0][0])
 		endTime = (datetime.datetime.now()).strftime('%Y%m%d-%H:%M')
 		query = 'UPDATE log set endTime = "' +endTime+'" WHERE logID="'+logID+'"'
-		self.cur.execute(query)
+		self.executeQuery(query,False)
 		logger.info("LOG UPDATED %s ENDED WITH LOGID %s ",machine,logID) #debug info
 	
 	#update the machine table with a property and value				
@@ -911,7 +934,7 @@ class DatabaseHandler():
 		value = str(value)
 		table = "laptops" if machine.startswith("LAPTOP") else "machines"
 		query = 'UPDATE ' + table + ' set '+prop+'="'+value+'" WHERE name="'+machine+'"'
-		self.cur.execute(query)
+		self.executeQuery(query, False)
 		values = self.getValues(machine)
 		return values
 	#check whether or not a user is already in the machine table
@@ -919,12 +942,10 @@ class DatabaseHandler():
 		isLaptop = True if machine.startswith("LAPTOP") else False
 		if isLaptop:
 			query = 'SELECT user, name FROM laptops WHERE name = "'+machine+'"'
-			self.cur.execute(query)
-			result = self.cur.fetchone()
+			result = self.executeQuery(query)[0]
 		else:
 			query = 'SELECT user, name, relay FROM machines WHERE name = "'+machine+'"'
-			self.cur.execute(query)
-			result = self.cur.fetchone()
+			result = self.executeQuery(query)[0]
 			if result[2] == "False":
 			#If this machine does not have a relay, it is not a printer, and user can use regardless of what other machines theyre using
 				return False
@@ -943,8 +964,7 @@ class DatabaseHandler():
 				query = 'SELECT user, name FROM laptops'
 			else:
 				query = 'SELECT user, name, relay FROM machines'
-			self.cur.execute(query)
-			results = self.cur.fetchall()
+			results = self.executeQuery(query)
 			for result in results:
 				if user in result:
 				#user exists in the machine table...are they using another 3d printer?
@@ -958,16 +978,14 @@ class DatabaseHandler():
 	#get the list of machines from the machine tables
 	def getMachines(self):
 		query = "SELECT name FROM machines"
-		self.cur.execute(query)
-		result = self.cur.fetchall()
+		result = self.executeQuery(query)
 		machines = []
 		for machine in result:
 			machines.append(machine[0])
 		return(machines)#return the list of machines
 	def getPrinters(self):
 		query = "SELECT name,alias FROM machines where relay like 'ps%'"
-		self.cur.execute(query)
-		result = self.cur.fetchall()
+		result = self.executeQuery(query)
 		machines = []
 		for machine in result:
 			machines.append(machine[0])
@@ -977,8 +995,7 @@ class DatabaseHandler():
 		endNum = str(16 * cabinet - 1)
 		startNum = str(16 * cabinet - 15)
 		query = "SELECT name FROM laptops WHERE RIGHT(name,2) BETWEEN " + startNum + " AND " + endNum
-		self.cur.execute(query)
-		result = self.cur.fetchall()
+		result = self.executeQuery(query)
 		machines = []
 		for machine in result:
 			machines.append(machine[0])
@@ -989,13 +1006,12 @@ class DatabaseHandler():
 		if machine.startswith("LAPTOP"):
 			query = 'UPDATE laptops set user=DEFAULT, starttime=DEFAULT, logID=DEFAULT WHERE name="'+machine+'"'
 		else:
-			query = 'UPDATE machines set user=DEFAULT, starttime=DEFAULT, thread=DEFAULT, printlength=DEFAULT, logID=DEFAULT WHERE name="'+machine+'"'
-		self.cur.execute(query)
+			query = 'UPDATE machines set user=DEFAULT, starttime=DEFAULT, thread=DEFAULT, printlength=DEFAULT, logID=DEFAULT, freeTime=DEFAULT WHERE name="'+machine+'"'
+		self.executeQuery(query,False)
 	#if a thread is currently running, stop it
 	def stopThreads(self):
-		query = "SELECT name,thread FROM machines WHERE thread IS NOT NULL"
-		self.cur.execute(query)
-		machines = self.cur.fetchall()
+		query =  "SELECT name,thread FROM machines WHERE thread IS NOT NULL"
+		machines = self.executeQuery(query)
 		for machine in machines:
 			logger.info("Stopping Thread on %s",machine[0])
 			getattr(envisionSS,machine[1]).kill()
@@ -1004,10 +1020,9 @@ class DatabaseHandler():
 		if machine.startswith("LAPTOP"):
 			query = 'SELECT name,starttime,user,status FROM laptops WHERE name="'+machine+'"'
 		else:
-			query = 'SELECT name,relay,starttime,thread,printlength,user,status,alias FROM machines WHERE name="'+machine+'"'
+			query = 'SELECT name,relay,starttime,thread,printlength,user,status,alias,freeTime FROM machines WHERE name="'+machine+'"'
 		logger.debug("Execute query %s",query)
-		self.cur.execute(query)
-		values = self.cur.fetchall()
+		values = self.executeQuery(query)
 		#logger.debug("Receieved db values %s",values)
 		if len(values) > 0:
 			return values[0]
@@ -1016,8 +1031,7 @@ class DatabaseHandler():
 	#check the machine table...if a thread was shutdown prematurely, restart it		
 	def restartThreads(self):
 		query = "SELECT name,thread FROM machines WHERE thread IS NOT NULL"
-		self.cur.execute(query)
-		machines = self.cur.fetchall()
+		machines = self.executeQuery(query)
 		for machine in machines:
 			machineValues = self.getValues(machine[0])
 			#verify the database is not corrupt...this happens sometimes when a thread isn't ended correctly
@@ -1026,12 +1040,19 @@ class DatabaseHandler():
 				logger.error("%s DB entry is corrupt. Resetting...",machineValues[0])
 				envisionSS.envisionDB.release(machine[0])
 			else:
-				logger.info("Restarting Thread on %s",machine[0])
-				threadName = machine[0].replace('-','_') #minus signs cause problems with the getattr call, replace with underscore
-				setattr(envisionSS,threadName,TimerThread(self,machine[0],machineValues))
-				getattr(envisionSS,threadName).start()#start a thread
-				query = 'UPDATE machines set thread="'+threadName+'" WHERE name="'+machine[0]+'"'#update the table
-				self.cur.execute(query)	
+				starttime = datetime.datetime.strptime(machineValues[2],'%Y%m%d-%H:%M:%S')
+				printLength = datetime.timedelta(seconds=int(machineValues[4]))
+				now = datetime.datetime.now()
+				if now > (starttime + printLength):
+					envisionSS.envisionDB.release(machine[0])
+					logger.info("%s expired and released",machineValues[0])
+				else:
+					logger.info("Restarting Thread on %s",machine[0])
+					threadName = machine[0].replace('-','_') #minus signs cause problems with the getattr call, replace with underscore
+					setattr(envisionSS,threadName,TimerThread(self,machine[0],machineValues))
+					getattr(envisionSS,threadName).start()#start a thread
+					query = 'UPDATE machines set thread="'+threadName+'" WHERE name="'+machine[0]+'"'#update the table
+					self.executeQuery(query,False)	
 	"""
 	-----------------------------------------------------------------------------------------------
 	"""
@@ -1039,10 +1060,10 @@ class DatabaseHandler():
 	#Check if the user exists in the ledger db
 	def userExists(self,user):
 		query = 'SELECT balance FROM ledger WHERE user ="' + user +'"'
-		result = self.cur.execute(query)
+		result = self.executeQuery(query)
 		if bool(result):
 		#if the user already has a balance (has registered for the ledger) than return the balance
-			balance = self.cur.fetchone()[0]
+			balance = result[0][0]
 			return str(balance)
 		else:
 		#else return False to indicate the user needs to agree to the terms of use
@@ -1051,7 +1072,7 @@ class DatabaseHandler():
 	def addNewUser(self,user):
 		query = 'INSERT INTO ledger (user,balance,owed) VALUES ("'+user+'","5","0")'
 		try:
-			self.cur.execute(query)
+			self.executeQuery(query,False)
 		except Exception as e:
 			logger.error("DB error, %s",e)
 			return False
@@ -1060,7 +1081,7 @@ class DatabaseHandler():
 	#subtract funds from the users ledger balance, return the new balance
 	def useFunds(self, user, funds):
 		query = 'UPDATE ledger SET balance=balance - '+ funds + ' WHERE user="' + user+'"'
-		self.cur.execute(query)
+		self.executeQuery(query,False)
 		newBalance = self.userExists(user)
 		if bool(newBalance):
 			return str(newBalance)
@@ -1069,13 +1090,13 @@ class DatabaseHandler():
 	#add funds to the users ledger balance and return the new balance
 	def addFunds(self, user, funds):
 		query = 'UPDATE ledger SET balance=balance + '+ funds + ' WHERE user="' + user+'"'
-		self.cur.execute(query)
+		self.executeQuery(query,False)
 		newBalance = self.userExists(user)
 		if bool(newBalance):
 			query = 'UPDATE ledger SET owed=owed + '+ funds + ' WHERE user="' + user+'"'
-			self.cur.execute(query)
+			self.executeQuery(query,False)
 			query = 'UPDATE ledger SET timestamp=NOW() WHERE user="' + user+'"'
-			self.cur.execute(query)
+			self.executeQuery(query,False)
 			return str(newBalance)
 		else:
 			return False
@@ -1083,29 +1104,27 @@ class DatabaseHandler():
 	def addCode(self,user,code):
 		errorFlag = False
 		query = 'SELECT id,stipend FROM classes WHERE code="'+code+'"'
-		result = self.cur.execute(query)
+		result = self.executeQuery(query)
 		if bool(result):
-			data = self.cur.fetchall()
+			data = result
 			codeID = str(data[0][0]) #what is the ID of the code (stored in the users ledger, to indicate they have used this code)
 			funds = data[0][1] #how much does the code add?
 			if funds > 0:
 				funds = str(funds)
 				query = 'SELECT balance FROM ledger WHERE user ="' + user +'"'
-				result=self.cur.execute(query)
+				result=self.executeQuery(query)
 				if bool(result):
 				#if the balance exists, this is redundant to make sure user is registered
-					balance = str(self.cur.fetchone()[0])
+					balance = str(result[0][0])
 					if float(balance) + float(funds) <= 100:
 					#make sure adding the code won't set balance to more than 100
 						query = 'SELECT codes FROM ledger WHERE user ="' + user +'"'
-						result=self.cur.execute(query)
+						result=self.executeQuery(query)
 						if bool(result):
 						#check if the user has used any codes this quarter
-							usedCodes = self.cur.fetchall()
-							if bool(usedCodes[0][0]):
-								usedCodes = (usedCodes[0][0]).split(',')
-							else:
-								usedCodes = []
+							usedCodes = []
+							for code in result[0][0]:
+								usedCodes.append(code)
 							if codeID not in usedCodes:
 							#check if this particular code has been used
 								usedCodes.append(codeID)
@@ -1116,12 +1135,12 @@ class DatabaseHandler():
 								#append to existing list of used codes
 									newCodes = ','.join(usedCodes)
 								query = 'UPDATE ledger SET codes ="'+newCodes+'" WHERE user="' + user+'"'
-								result=self.cur.execute(query)
-								if bool(result):
+								result=self.executeQuery(query,False)
+								if True:
 								#catch all for updating the ledger
 									query = 'UPDATE classes SET users = users + 1 WHERE id="' + codeID +'"'
-									result=self.cur.execute(query)
-									if bool(result) is False:
+									result=self.executeQuery(query,False)
+									if False:
 										errorFlag = True
 										error = "DBERROR"							
 								else:
@@ -1150,7 +1169,7 @@ class DatabaseHandler():
 			return (False,error)
 		else:
 			query = 'UPDATE ledger SET balance=balance + '+ funds + ' WHERE user="' + user+'"'
-			self.cur.execute(query)
+			self.executeQuery(query,False)
 			newBalance = self.userExists(user)
 			return(True, str(newBalance))
 
@@ -1188,9 +1207,9 @@ class EnvisionServer():
 def closeUp(msg,event):
 #function to close the socket and terminate all active threads
 #threads terminate without turning off the relays
-	envisionSS.envisionDB.connectDB()
+	#envisionSS.envisionDB.connectDB()
 	envisionSS.envisionDB.stopThreads() #stop the threads but keep the relays on
-	envisionSS.envisionDB.closeDB()
+	#envisionSS.envisionDB.closeDB()
 	server.shutdown()
 	
 	#print debug info
@@ -1234,8 +1253,9 @@ if __name__ == "__main__":
 	server.daemon = True
 	
 	envisionSS.envisionDB.connectDB()
+	envisionSS.oecDB.connectDB()
 	envisionSS.envisionDB.restartThreads() #restart any threads that were shutdown on last termination
-	envisionSS.envisionDB.closeDB()
+	#envisionSS.envisionDB.closeDB()
 	try:
 		server.serve_forever()
 		doneEvent.wait()

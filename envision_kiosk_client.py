@@ -15,7 +15,7 @@ else:
 	GTK = True
 	MSW = False
 
-VERSION = "403"
+VERSION = "405"
 MINIMUMFONTSIZE = 4
 NUMPRINTERS = 16
 #SERVERADDRESS = 'localhost'
@@ -1378,8 +1378,8 @@ class PrinterFrame(wx.Frame):
 			machines.extend(info.split("|"))#parse out the names into a list
 			machinesIter = iter(machines)#create an iterable
 			machines = zip(machinesIter,machinesIter)#use the iterable to create a list of tuples (name,alias)
-			print "DEBUG"
-			print machines
+			#print "DEBUG"
+			#print machines
 			self.setupMachines(machines)
 			return
 		elif command == "EVT_SETUP":
@@ -1704,7 +1704,8 @@ class PrinterFrame(wx.Frame):
 			return
 		elif command == "EVT_CHANGE_STATUS":
 		#this shouldn't happen
-			errorMessage = "Unable to take machine offline\n\n This is safe to dismiss"		
+			errorMessage = "Unable to take machine offline\n\n This is safe to dismiss"
+			app.adminFrame.inputFrame.onClose(wx.EVT_BUTTON)
 		elif command == "EVT_RELEASE":
 			if errorList[0] == "BADTIME":
 				#errorMsg = "Machine is currently in use"
@@ -1738,12 +1739,17 @@ class PrinterFrame(wx.Frame):
 			elif errorList[0]=="ADDED":
 			#if admin tries to add additional time for user, but user does not have enough funds to cover the extra time
 				errorMsg = "This User Does Not Have Enough Funds\n\nBalance is $"+errorList[1]
+			app.adminFrame.inputFrame.onClose(wx.EVT_BUTTON)
 		elif command == "ERROR":
 		#catchall 
 			errorMsg = "Received Error: " + error
 		elif command == "EVT_END":
 		#relay issues
 			errorMsg = "RELAY DID NOT RESPOND. Try Again"
+			app.adminFrame.inputFrame.onClose(wx.EVT_BUTTON)
+		elif command == "EVT_FREE_TIME":
+			errorMsg = "Free Time Exceeded. Please use funds to add time"
+			app.adminFrame.inputFrame.onClose(wx.EVT_BUTTON)
 		elif command == "EVT_SINGLE_CHECK":
 			if errorList[0] == "OCCUPIED":
 				machine = errorList[1]
@@ -1763,8 +1769,12 @@ class PrinterFrame(wx.Frame):
 		else:
 		#failsafe catch-all
 			errorMsg = command + " ERROR\n\n Please see an admin"
-		errorDlg = wx.MessageDialog(self, errorMsg, command, wx.OK | wx.CENTRE)
+		errorDlg = wx.MessageDialog(self, errorMsg, command, wx.OK | wx.CENTRE | wx.STAY_ON_TOP)
+		#errorDlg.SetFocus()
+		
 		errorDlg.ShowModal()
+		#errorDlg.Raise()
+		#errorDlg.SetFocus()
 		errorDlg.Close()
 		errorDlg.Destroy()
 		

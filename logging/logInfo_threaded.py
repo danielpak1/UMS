@@ -109,10 +109,10 @@ class DatabaseHandler():
 		#if you can't connect, end the program
 			print e
 			print "unable to connect to DB...Shutting down."
-			return (False)
+			sys.exit(1)
 		else:
 			print "Successful Connection to DB"
-		self.db.autocommit(True) #changes made are committed on execution
+		#self.db.autocommit(True) #changes made are committed on execution
 		self.cur = self.db.cursor() #set the cursor to the beginning of the DB
 	#function to clean up the connection 
 	def closeDB(self):

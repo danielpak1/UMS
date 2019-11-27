@@ -285,7 +285,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			#if machine is in use and the user is not the same, not ok
 				returnInfo.append("DENY")
 				addMessage = "|".join(["OCCUPIED",machine])
-				returnInfo.append("addMessage")
+				returnInfo.append(addMessage)
 		else:
 			returnInfo.append("OK")
 			returnInfo.append(machine)
@@ -734,14 +734,7 @@ class TimerThread(threading.Thread):
 		#success = self.sshRelay(relayOff) #open an SSH tunnel to the relay machine, and send the off signal
 		success = self.kasaRelay(relayOff)
 		logger.debug('%s',success)
-		if success['system']['set_relay_state']['err_code'] == 0:
-		#if the tunnel was a success
-			logger.info("%s STOPPED", self.machine)
-			envisionSS.envisionDB.logEnd(self.machine)
-			#clear the machine properties to release the machine and the user
-			envisionSS.envisionDB.release(self.machine)
-
-		elif success=="FAILED":
+		if success=="FAILED":
 		#if the tunnel failed, wait 10 seconds and try again. This will keep trying until the relay turns off successfully
 			logger.warning("%s Failed to Stop", self.machine)
 			self.killCount +=1
@@ -754,7 +747,14 @@ class TimerThread(threading.Thread):
 				logger.critical("Failed to connect to local DB for FORCE-KILL...retrying")
 				time.sleep(5)
 				self.stop()
-	
+		elif type(success) is dict:
+			if success['system']['set_relay_state']['err_code'] == 0:
+			#if the tunnel was a success
+				logger.info("%s STOPPED", self.machine)
+				envisionSS.envisionDB.logEnd(self.machine)
+				#clear the machine properties to release the machine and the user
+				envisionSS.envisionDB.release(self.machine)
+			
 	def kasaRelay(self,command):
 		power_strip = self.machineValues[1]
 		logger.debug("ATTEMPTING TO MODIFY THE RELAY on: %s", power_strip)

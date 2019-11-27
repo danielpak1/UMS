@@ -14,7 +14,14 @@ else:
 
 reservedDict = {}
 
-db = MySQLdb.connect(host="db.eng.ucsd.edu",user=passDict['db-user'],passwd=passDict['db-pass'],db="makerspace")
+try:
+	db = MySQLdb.connect(host="db.eng.ucsd.edu",user=passDict['db-user'],passwd=passDict['db-pass'],db="makerspace")
+except Exception as e:
+	print e
+	print "Failed to connect to eng server"
+	sys.exit(1)
+else:
+	print "Connected to eng server"
 cur = db.cursor()
 db.autocommit(True)
 #clear out old reservation dates
@@ -34,9 +41,17 @@ for result in results:
 	endTime = str(result[2])
 	student = str(result[3])
 	reservedDict[day][-1].extend((startTime,endTime,student))
-
+cur.close()
+db.close()
 #copy remote to table to local copy	
-db = MySQLdb.connect(host='envision-local.dynamic.ucsd.edu',user=passDict['envision-user'],passwd=passDict['envision-pass'],db="envision_control")
+try:
+	db = MySQLdb.connect(host='envision-local.ucsd.edu',user=passDict['envision-user'],passwd=passDict['envision-pass'],db="envision_control")
+except Exception as e:
+	print e
+	print "Failed to connect to envision db"
+	sys.exit(1)
+else:
+	print "Connected to EnVision db"
 cur = db.cursor()
 db.autocommit(True)
 #clean the local table
@@ -47,4 +62,5 @@ for day in reservedDict:
 		query = 'INSERT INTO laser_reserve (reserve_date,starttime,endtime,student_id) VALUE ("'+day+'","'+time[0]+'","'+time[1]+'","'+time[2]+'")'
 		#print query
 		cur.execute(query)
+cur.close()
 db.close()

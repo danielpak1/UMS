@@ -222,8 +222,8 @@ class MainWindow(wx.Frame):
 			srv.chdir(target)
 			try:
 				srv.put('./schedule.png')
-			except:
-				pass
+			except Exception as e:
+				print e
 			srv.close()
 		except Exception as e:
 			print ("Server Connection FAILED", e)
@@ -276,54 +276,59 @@ class DatabaseHandler():
 			self.openAccess[str(i)]=[]
 	
 	def loadOpenAccess(self):
-		db = MySQLdb.connect(host="envision-local",user=passDict['envision-user'],passwd=passDict['envision-pass'],db="envision_control")
-		db.autocommit(True)
-		cur = db.cursor()
-		query = "SELECT day,startTime,endTime FROM oa_hours"
-		cur.execute(query)
-		results = cur.fetchall()
-		for result in results:
-			if result[0] in self.openAccess:
-				self.openAccess[result[0]].append([])
-				self.openAccess[result[0]][-1].extend((result[1],result[2]))
-		db.close()
+		try:
+			db = MySQLdb.connect(host="envision-local",user=passDict['envision-user'],passwd=passDict['envision-pass'],db="envision_control")
+		except Exception as e:
+			print e
+		else:
+			db.autocommit(True)
+			cur = db.cursor()
+			query = "SELECT day,startTime,endTime FROM oa_hours"
+			cur.execute(query)
+			results = cur.fetchall()
+			for result in results:
+				if result[0] in self.openAccess:
+					self.openAccess[result[0]].append([])
+					self.openAccess[result[0]][-1].extend((result[1],result[2]))
+			db.close()
 	
 	def setOpenAccess(self):
 		self.loadOpenAccess()
 		reservedDict = self.getReservedTimes()
-		if self.openAccess:
-			dayLength = len(app.frame.hours)
-			for day in self.openAccess:
-				if day:
-					if self.openAccess[day]:
-						for timeSlot in self.openAccess[day]:
-							if timeSlot:
-								multiplier = dayLength * int(day[:1])
-								if timeSlot[0] in app.frame.hours:
-									startIndex = app.frame.hours.index(timeSlot[0])
-									if timeSlot[1] in app.frame.hours:
-										endIndex = app.frame.hours.index(timeSlot[1])
-									elif timeSlot[1] == app.frame.closeTime:
-										endIndex = len(app.frame.hours)
-									else: 
-										continue
-									for i in range (multiplier+startIndex, multiplier+endIndex):
-										if day in reservedDict:
-											buttonTime = app.frame.buttons[i].GetLabel()
-											buttonTime = datetime.datetime.strptime(buttonTime,'%H%M')
-											for reservedSlot in reservedDict[day]:
-												reservedStart = datetime.datetime.strptime(reservedSlot[0],'%H%M')
-												reservedEnd = datetime.datetime.strptime(reservedSlot[1],'%H%M')
-												if reservedStart <= buttonTime < reservedEnd:
-													app.frame.buttons[i].SetBackgroundColour("red")
-													break
-												else:
-													app.frame.buttons[i].SetBackgroundColour("forest green")
-										else:
-											app.frame.buttons[i].SetBackgroundColour("forest green")
-										app.frame.buttons[i].Enable(True)
-										app.frame.buttons[i].SetForegroundColour(wx.WHITE)
-		self.isReserved(reservedDict)
+		if reservedDict is not None:
+			if self.openAccess:
+				dayLength = len(app.frame.hours)
+				for day in self.openAccess:
+					if day:
+						if self.openAccess[day]:
+							for timeSlot in self.openAccess[day]:
+								if timeSlot:
+									multiplier = dayLength * int(day[:1])
+									if timeSlot[0] in app.frame.hours:
+										startIndex = app.frame.hours.index(timeSlot[0])
+										if timeSlot[1] in app.frame.hours:
+											endIndex = app.frame.hours.index(timeSlot[1])
+										elif timeSlot[1] == app.frame.closeTime:
+											endIndex = len(app.frame.hours)
+										else: 
+											continue
+										for i in range (multiplier+startIndex, multiplier+endIndex):
+											if day in reservedDict:
+												buttonTime = app.frame.buttons[i].GetLabel()
+												buttonTime = datetime.datetime.strptime(buttonTime,'%H%M')
+												for reservedSlot in reservedDict[day]:
+													reservedStart = datetime.datetime.strptime(reservedSlot[0],'%H%M')
+													reservedEnd = datetime.datetime.strptime(reservedSlot[1],'%H%M')
+													if reservedStart <= buttonTime < reservedEnd:
+														app.frame.buttons[i].SetBackgroundColour("red")
+														break
+													else:
+														app.frame.buttons[i].SetBackgroundColour("forest green")
+											else:
+												app.frame.buttons[i].SetBackgroundColour("forest green")
+											app.frame.buttons[i].Enable(True)
+											app.frame.buttons[i].SetForegroundColour(wx.WHITE)
+			self.isReserved(reservedDict)
 	def isReserved(self, reservedDict):
 		now = datetime.datetime.now()
 		time24 = datetime.datetime.strptime(now.strftime("%H%M"),'%H%M')
@@ -357,20 +362,25 @@ class DatabaseHandler():
 		today = today.strftime("%Y-%m-%d")
 		endDay = endDay.strftime("%Y-%m-%d")
 		query = 'SELECT reserve_date,startTime,endTime,student_id FROM laser_reserve WHERE reserve_date >= CURDATE() AND reserve_date <="'+endDay+'"'
-		db = MySQLdb.connect(host='envision-local',user=passDict['envision-user'],passwd=passDict['envision-pass'],db="envision_control")
-		cur = db.cursor()
-		cur.execute(query)
-		results = cur.fetchall()
-		for result in results:
-			day = str((datetime.datetime.strptime(result[0],'%Y-%m-%d')).weekday())
-			if day not in reservedDict:
-				reservedDict[day]=[]
-			startTime = result[1][:-3].replace(":",'')
-			endTime = result[2][:-3].replace(":",'')
-			userID = result[3]
-			reserveTuple = (startTime,endTime,userID)
-			reservedDict[day].append(reserveTuple)
-		return reservedDict
+		try:
+			db = MySQLdb.connect(host='envision-local',user=passDict['envision-user'],passwd=passDict['envision-pass'],db="envision_control")
+		except Exception as e:
+			print e
+			return None
+		else:
+			cur = db.cursor()
+			cur.execute(query)
+			results = cur.fetchall()
+			for result in results:
+				day = str((datetime.datetime.strptime(result[0],'%Y-%m-%d')).weekday())
+				if day not in reservedDict:
+					reservedDict[day]=[]
+				startTime = result[1][:-3].replace(":",'')
+				endTime = result[2][:-3].replace(":",'')
+				userID = result[3]
+				reserveTuple = (startTime,endTime,userID)
+				reservedDict[day].append(reserveTuple)
+			return reservedDict
 
 app = EnVisionScheduling(False)
 dbHandler = DatabaseHandler()

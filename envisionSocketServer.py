@@ -826,16 +826,21 @@ class DatabaseHandler():
 					break
 			if i>=4:
 				return None
-		except errors.Errors as e:
+		except errors.Error as e:
 			logger.warning("Database has disconnected, retrying")
 			self.db.reconnect(attempts=5,delay=10)
+		except Exception as e:
+			logger.critical("Unable to connect to database: %s! Can't proceed", self.host)
+			return None
 		else:
 			#print "connected"
 			#print query
+			logger.debug("Query: %s", query)
 			thisCursor = thisCnx.cursor()
 			thisCursor.execute(query) #execute the query
 			if fetch:
 				result = thisCursor.fetchall()
+				logger.debug("Query result: %s", result)
 			else:
 				if logID:
 					query = 'SELECT LAST_INSERT_ID();'#keep the entry ID in a variable to use later
@@ -896,7 +901,7 @@ class DatabaseHandler():
 						returnMsg[5]=str(result[5])
 					if result[6] is not None:
 					#suspended
-						returnMsg[6]=result[6]						
+						returnMsg[6]=result[6]
 				break	
 		return returnMsg
 	#create a log entry for the user and machine
@@ -1040,6 +1045,8 @@ class DatabaseHandler():
 				logger.error("%s DB entry is corrupt. Resetting...",machineValues[0])
 				envisionSS.envisionDB.release(machine[0])
 			else:
+				logger.debug("%s starttime: %s",machine, machineValues[2])
+				logger.debug("%s printlength: %s",machine, machineValues[4]) 
 				starttime = datetime.datetime.strptime(machineValues[2],'%Y%m%d-%H:%M:%S')
 				printLength = datetime.timedelta(seconds=int(machineValues[4]))
 				now = datetime.datetime.now()
@@ -1120,7 +1127,7 @@ class DatabaseHandler():
 					#make sure adding the code won't set balance to more than 100
 						query = 'SELECT codes FROM ledger WHERE user ="' + user +'"'
 						result=self.executeQuery(query)
-						if bool(result):
+						if result[0][0] is not None:
 						#check if the user has used any codes this quarter
 							usedCodes = []
 							for code in result[0][0]:
@@ -1134,22 +1141,22 @@ class DatabaseHandler():
 								else:
 								#append to existing list of used codes
 									newCodes = ','.join(usedCodes)
-								query = 'UPDATE ledger SET codes ="'+newCodes+'" WHERE user="' + user+'"'
-								result=self.executeQuery(query,False)
-								if True:
-								#catch all for updating the ledger
-									query = 'UPDATE classes SET users = users + 1 WHERE id="' + codeID +'"'
-									result=self.executeQuery(query,False)
-									if False:
-										errorFlag = True
-										error = "DBERROR"							
-								else:
-									errorFlag = True
-									error = "DBERROR"
 							else:
 							#already used the code
 								errorFlag = True
-								error = "USED"									
+								error = "USED"
+								return (False,error)
+						else:
+							newCodes = codeID
+						query = 'UPDATE ledger SET codes ="'+newCodes+'" WHERE user="' + user+'"'
+						result=self.executeQuery(query,False)
+						if True:
+						#catch all for updating the ledger
+							query = 'UPDATE classes SET users = users + 1 WHERE id="' + codeID +'"'
+							result=self.executeQuery(query,False)
+							if False:
+								errorFlag = True
+								error = "DBERROR"							
 						else:
 							errorFlag = True
 							error = "DBERROR"

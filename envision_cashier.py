@@ -12,7 +12,7 @@ All Rights Reserved
 #import calls...pretty sure all of them are used
 import os, time
 import wx
-import pysftp
+#import pysftp
 import json
 import sys
 import datetime

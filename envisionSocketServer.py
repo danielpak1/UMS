@@ -58,7 +58,7 @@ handler = logging.handlers.TimedRotatingFileHandler("/var/log/envision/socketSer
 formatter=logging.Formatter("%(levelname)s:%(asctime)s:%(threadName)s:%(message)s")
 handler.setFormatter(formatter)
 logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)#DEBUG, INFO, WARNING, etc
+logger.setLevel(logging.INFO)#DEBUG, INFO, WARNING, etc
 #logger.basicConfig(format="%(levelname)s:%(asctime)s:%(threadName)s:%(message)s", filename="/var/log/envision/socketServer.log", level=logging.INFO)
 
 
@@ -181,7 +181,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		elif machine.split("_")[0] == "LAPTOP":
 			laptops = envisionSS.envisionDB.getLaptops(int(machine[-1]))
 			returnInfo.append("OK")
-			returnInfo.append("|".join(laptops))			
+			returnInfo.append("|".join(laptops))
 		else:
 			returnInfo.append("OK")
 			returnInfo.append("NONE")
@@ -262,6 +262,8 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			logID = envisionSS.envisionDB.logStart(user, machine, major, level)
 			envisionSS.envisionDB.updateMachine(machine,"user",user)
 			envisionSS.envisionDB.updateMachine(machine,"logID",logID)
+			if major == "ADMIN" and level == "ADMIN":
+				envisionSS.envisionDB.updateMachine(machine,"status","ADMIN")
 			addMessage = ("|").join(["ADDED",machine])
 			returnInfo.append("OK")
 			returnInfo.append(addMessage)
@@ -290,13 +292,19 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			returnInfo.append("OK")
 			returnInfo.append(machine)
 		return returnInfo
-	def ReleaseID(self,machine,userID):
+	def ReleaseID(self,machine,userID,command):
 		returnInfo = []
+		machineValues = envisionSS.envisionDB.getValues(machine)
+		logger.info("%s %s",command, machineValues[3])
 		if userID:
-			envisionSS.envisionDB.logEnd(machine)
-			envisionSS.envisionDB.release(machine)
-			returnInfo.append("OK")
-			returnInfo.append(machine)
+			if command=="EVT_RELEASE" and machineValues[3] == "ADMIN":
+					returnInfo.append("DENY")
+					returnInfo.append("ADMIN")
+			else:
+				envisionSS.envisionDB.logEnd(machine)
+				envisionSS.envisionDB.release(machine)
+				returnInfo.append("OK")
+				returnInfo.append(machine)
 		else:
 			returnInfo.append("DENY")
 			returnInfo.append("NOTFOUND")
@@ -633,7 +641,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 						# if threadName:
 							# reply.append("DENY")
 							# reply.append("BADTIME|"+startTime+"|"+printLength)
-						reply.extend(self.ReleaseID(machine,user))
+						reply.extend(self.ReleaseID(machine,user,command))
 
 					elif command == "EVT_CHECKOUT":
 						reply.extend(self.Checkout(machine,user))
@@ -649,7 +657,10 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 					elif command == "EVT_ADD_USER":
 					#Fired if user is not in ledger
 						reply.extend(self.AddUser(user))
-				
+					elif command == "EVT_ADMIN":
+						major = "ADMIN"
+						level = "ADMIN"
+						reply.extend(self.StartMachine(machine,user,major,level))
 					elif command == "EVT_ADD_FUNDS":
 					#fired after a user adds funds
 						reply.extend(self.AddFunds(user, info[0]))
@@ -661,7 +672,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 					elif command == "EVT_SETUP":
 						reply.extend(self.Setup(info[0]))
 					elif command == "EVT_RETURN":
-						reply.extend(self.ReleaseID(machine,user))
+						reply.extend(self.ReleaseID(machine,user,command))
 						reply[-1] = ('|').join([reply[-1],machine])
 			else:
 				reply.extend(("ERROR","DENY","DBERROR"))
@@ -999,17 +1010,18 @@ class DatabaseHandler():
 	def getLaptops(self,cabinet):
 		endNum = str(16 * cabinet - 1)
 		startNum = str(16 * cabinet - 15)
-		query = "SELECT name FROM laptops WHERE RIGHT(name,2) BETWEEN " + startNum + " AND " + endNum
+		query = "SELECT name,alias FROM laptops WHERE RIGHT(name,2) BETWEEN " + startNum + " AND " + endNum
 		result = self.executeQuery(query)
 		machines = []
 		for machine in result:
 			machines.append(machine[0])
+			machines.append(machine[1])
 		return(machines)#return the list of machines	
 	
 	#release the current user from the machine table, and reset all values  to DEFAULT (None)
 	def release(self,machine):
 		if machine.startswith("LAPTOP"):
-			query = 'UPDATE laptops set user=DEFAULT, starttime=DEFAULT, logID=DEFAULT WHERE name="'+machine+'"'
+			query = 'UPDATE laptops set user=DEFAULT, starttime=DEFAULT, status=DEFAULT, logID=DEFAULT WHERE name="'+machine+'"'
 		else:
 			query = 'UPDATE machines set user=DEFAULT, starttime=DEFAULT, thread=DEFAULT, printlength=DEFAULT, logID=DEFAULT, freeTime=DEFAULT WHERE name="'+machine+'"'
 		self.executeQuery(query,False)

@@ -464,6 +464,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			if newBalance:
 				returnInfo.append("OK")
 				returnInfo.append(newBalance)
+				returnInfo.append(info)
 			else:
 				returnInfo.append("DENY")
 				returnInfo.append("DBERROR")

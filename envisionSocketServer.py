@@ -464,7 +464,6 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			if newBalance:
 				returnInfo.append("OK")
 				returnInfo.append(newBalance)
-				returnInfo.append(info)
 			else:
 				returnInfo.append("DENY")
 				returnInfo.append("DBERROR")
@@ -665,6 +664,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 					elif command == "EVT_ADD_FUNDS":
 					#fired after a user adds funds
 						reply.extend(self.AddFunds(user, info[0]))
+						reply[-1] = ('|').join([reply[-1],info[0]])
 
 					elif command == "EVT_ADD_CODE":
 					#fired if a user uses a class code

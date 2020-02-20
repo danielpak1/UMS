@@ -19,9 +19,10 @@ import datetime
 from wx.lib.pubsub import pub
 import wx.lib.agw.pybusyinfo as PBI
 import socket, threading
+import printer, hashlib
 
 #Version Tracking
-version = "v1"
+version = "v2"
 machineName="CASHIER"
 
 if wx.Platform == "__WXMSW__":
@@ -46,7 +47,8 @@ userIDnumber = None
 idLength = 11
 envisionVersion = "EnVision Maker Studio (" +version + ")\n< " +machineName + " >"
 
-serverAddress = 'envision-local'
+#serverAddress = 'envision-local'
+serverAddress = '127.0.0.1'
 
 disabled = False
 
@@ -230,8 +232,9 @@ class OnScreenKB(wx.Frame):
 class MessageFrame(wx.Frame):
 	def __init__(self,parent):
 		"""Constructor"""
-		#wx.Frame.__init__(self, parent, style=wx.STAY_ON_TOP | wx.NO_BORDER | wx.FRAME_NO_TASKBAR, title="Popup Frame")
-		wx.Frame.__init__(self, parent, style=wx.STAY_ON_TOP | wx.FRAME_FLOAT_ON_PARENT, title="MESSAGE", size=(450,300))
+		#wx.Frame.__init__(self, parent, style=wx.DEFAULT_FRAME_STYLE | wx.STAY_ON_TOP | wx.NO_BORDER | wx.FRAME_NO_TASKBAR, title="Popup Frame")
+		#wx.Frame.__init__(self, parent, style=wx.DEFAULT_FRAME_STYLE | wx.STAY_ON_TOP | wx.FRAME_FLOAT_ON_PARENT, title="MESSAGE", size=(450,300))
+		wx.Frame.__init__(self, parent, style=wx.STAY_ON_TOP | wx.FRAME_FLOAT_ON_PARENT | wx.FRAME_NO_TASKBAR | wx.NO_BORDER, title="Popup Frame")
 		self.parent = parent
 		self.panel = wx.Panel(self, style=wx.SUNKEN_BORDER,size=(450,300))
 		msg = "THIS WHOLE MESSAGE IS MEANT FOR SIZING PURPOSES"
@@ -294,6 +297,7 @@ class MessageFrame(wx.Frame):
 		#self.SetSizer(sizerVert)
 		self.SetSizer(mainSizer)
 		self.Centre()
+		self.Raise()
 		self.Layout()
 		# self.timer.Start(10000)
 		self.inactiveCount = 0
@@ -356,6 +360,71 @@ class MessageFrame(wx.Frame):
 			# app.frame.Layout()
 			# app.frame.expireTimer.Start(1000)
 
+class PrinterThread(threading.Thread,):
+	def __init__(self,thisUser,amount):
+		threading.Thread.__init__(self)
+		self.p=printer.ThermalPrinter(serialport="/dev/ttyS0")
+		self.thisUser = thisUser
+		self.amount = amount
+	def run(self,):
+#		pass
+#	def printReceipt(self, thisUser, amount):
+		now = datetime.datetime.now()
+		today = str(now.date()) + "\n"
+		timeStamp = str(now.time())[:8] + "\n"
+		pid = self.thisUser + "\n"
+		amount = "$" + self.amount + "\n"
+		pageBreak = "*" * 31 +"\n"
+		blankLine = " " * 31 
+		hashedString = today+timeStamp+pid+amount
+		hashedValue = str(int(hashlib.md5(hashedString).hexdigest(),16))[:26]
+
+		self.p.justify("C")
+
+		self.p.print_text(pageBreak)
+		self.p.underline()
+		self.p.print_text(blankLine)
+		self.p.print_text("\n")
+		self.p.linefeed()
+		self.p.underline(False)
+
+		self.p.bold()
+		self.p.print_text("- EnVision -\n")
+		self.p.bold(False)
+		self.p.underline()
+		self.p.print_text("3D Printer Funds\n")
+		self.p.underline(False)
+		self.p.linefeed()
+		self.p.print_text("DATE: ")
+		self.p.underline()
+		self.p.print_text(today)
+		self.p.underline(False)
+		self.p.print_text("TIME: ")
+		self.p.underline()
+		self.p.print_text(timeStamp)
+		self.p.underline(False) 
+		self.p.print_text("PID: ")
+		self.p.underline()
+		self.p.print_text(pid)
+		self.p.underline(False)
+		self.p.print_text("AMOUNT: ")
+		self.p.underline()
+		self.p.print_text(amount)
+		self.p.underline(False)
+		self.p.print_text("HASH: ")
+		self.p.underline()
+		self.p.print_text(hashedValue)
+
+		self.p.linefeed()
+		self.p.print_text(blankLine)
+		self.p.print_text("\n")
+		self.p.underline(False)
+		self.p.print_text(pageBreak)
+
+		self.p.linefeed()
+		self.p.linefeed() 
+		self.p.linefeed()
+		self.p.linefeed()
 class SocketThread(threading.Thread):
 	def __init__(self,parent,message):
 		threading.Thread.__init__(self)
@@ -414,7 +483,7 @@ class MainWindow(wx.Frame):
 	def __init__(self, parent, title):
 		#i don't know what this does
 		self.dirname = ' '
-		styleFlags = wx.STAY_ON_TOP | wx.NO_BORDER | wx.FRAME_NO_TASKBAR
+		styleFlags = wx.NO_BORDER | wx.FRAME_NO_TASKBAR
 		if GTK:
 			styleFlags = wx.DEFAULT_FRAME_STYLE #| wx.FRAME_NO_TASKBAR
 		wx.Frame.__init__(self, parent, title = title, style=styleFlags)
@@ -500,8 +569,9 @@ class MainWindow(wx.Frame):
 			self.processDeny(event, statusInfo)
 	
 	def processReply(self, command, info):
+		infoList = info.upper().split("|")
 		if command == "EVT_CHECKID":
-			if info == "ADMIN":
+			if infoList[0] == "ADMIN":
 				if disabled:
 					action = self.machineStatus(False)
 					return
@@ -512,19 +582,23 @@ class MainWindow(wx.Frame):
 				self.startMessageFrame()
 				self.socketWorker.sendEvent(["EVT_START",machineName,userIDnumber,"False"])
 		elif command == "EVT_START":
-			if info != "UNKNOWN":
-				self.machineStart(True, info)
-			elif info == "UNKNOWN":
-				self.machineStart(False, info)
+			if infoList[0] != "UNKNOWN":
+				self.machineStart(True, infoList[0])
+			elif infoList[0] == "UNKNOWN":
+				self.machineStart(False, infoList[0])
 		else:
 			if command == "EVT_CONNECT":
 				return
 			if command == "EVT_ADD_USER":
 				wx.MessageBox("You've been added!\n\n$5.00 has also been added to your balance","SUCCESS")
 			elif command == "EVT_ADD_CODE":
-				wx.MessageBox("SUCCESS!\n\nYour balance is now: $"+info,"SUCCESS")
+				wx.MessageBox("SUCCESS!\n\nYour balance is now: $"+infoList[0],"SUCCESS")
 			elif command == "EVT_ADD_FUNDS":
-				wx.MessageBox("SUCCESS!\n\nYour balance is now: $"+info,"SUCCESS")
+				#self.printerWorker.printReceipt(userIDnumber,infoList[1])
+				printerWorker = PrinterThread(userIDnumber,infoList[1])
+				printerWorker.start()
+				wx.MessageBox("SUCCESS!\n\nYour balance is now: $"+infoList[0],"SUCCESS")
+				
 			self.msgFrame.onClose(wx.EVT_BUTTON)
 			self.startMessageFrame()
 			self.socketWorker.sendEvent(["EVT_START",machineName,userIDnumber,"False"])
@@ -757,7 +831,7 @@ class MainWindow(wx.Frame):
 
 		envisionVersion = "EnVision Maker Studio (" +version + ")\n<" +machineName + ">\n- user database updated: " +lastMod[4:16] +" -"
 		self.branding.SetLabel(envisionVersion)
-
+		
 	def socketClosed(self, event, errorMsg):
 		self.Show()
 		self.Raise()

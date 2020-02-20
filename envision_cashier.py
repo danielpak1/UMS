@@ -19,7 +19,7 @@ import datetime
 from wx.lib.pubsub import pub
 import wx.lib.agw.pybusyinfo as PBI
 import socket, threading
-import printer, hashlib
+import envisionPrinter, hashlib
 
 #Version Tracking
 version = "v2"

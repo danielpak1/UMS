@@ -47,8 +47,8 @@ userIDnumber = None
 idLength = 11
 envisionVersion = "EnVision Maker Studio (" +version + ")\n< " +machineName + " >"
 
-#serverAddress = 'envision-local'
-serverAddress = '127.0.0.1'
+serverAddress = 'envision-local'
+#serverAddress = '127.0.0.1'
 
 disabled = False
 

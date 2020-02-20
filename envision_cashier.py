@@ -363,7 +363,7 @@ class MessageFrame(wx.Frame):
 class PrinterThread(threading.Thread,):
 	def __init__(self,thisUser,amount):
 		threading.Thread.__init__(self)
-		self.p=printer.ThermalPrinter(serialport="/dev/ttyS0")
+		self.p=envisionPrinter.ThermalPrinter(serialport="/dev/ttyS0")
 		self.thisUser = thisUser
 		self.amount = amount
 	def run(self,):

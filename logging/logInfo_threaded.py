@@ -58,7 +58,7 @@ class RunReportThread(threading.Thread):
 			columnList = self.parent.levelListBox.GetCheckedStrings()
 			#print numMachines, columnList, rowList
 			numQueries = len(numMachines) * len(columnList) * len(rowList)
-		wx.CallAfter(self.parent.SetGauge,numQueries-35)
+		wx.CallAfter(self.parent.SetGauge,numQueries)
 		queries = 0
 		self.reportDict = OrderedDict()
 		self.parent.umsDB.connectDB()
@@ -179,6 +179,14 @@ class DatabaseHandler():
 				else:
 					self.parent.majorList.append(row[0])
 		query = 'select name from machines order by name'
+		numRows = self.cur.execute(query)
+		while True:
+			row = self.cur.fetchone()
+			if row == None:
+				break
+			else:
+				self.parent.machineList.append(row[0])
+		query = 'select name from laptops order by name'
 		numRows = self.cur.execute(query)
 		while True:
 			row = self.cur.fetchone()

@@ -15,7 +15,7 @@ else:
 	GTK = True
 	MSW = False
 
-VERSION = "405"
+VERSION = "406"
 MINIMUMFONTSIZE = 4
 NUMPRINTERS = 16
 #SERVERADDRESS = 'localhost'
@@ -298,27 +298,16 @@ class SimplePopupFrame(wx.Frame):
 		self.onClose(wx.EVT_BUTTON)
 	def LockerOpen(self,event):
 		app.frame.timer.Stop()
-		solenoid = str((int(self.machine[-2:])-1) - ((int(app.lockerNumber) - 1) * 16)) + '\n'
-		machineLocker = str(int(self.machine[-2:])-1)+'\n'
-		try:
-			ARDUINO.write(solenoid)
-		except Exception as e:
-			print e
-			message = "Solenoid failed...please try again"
-			success = False
-		else:
-			message = self.machine + " OPENED!\n\nPlease remember to close the door"
-			success = True
-		successDlg = wx.MessageDialog(self, message, "SUCCESS", wx.OK | wx.CENTRE)
-		result = successDlg.ShowModal()
-		successDlg.Close()
-		successDlg.Destroy()
-		if result == wx.ID_OK:
-			app.frame.timer.Start()
-			self.onClose(wx.EVT_BUTTON)
+		self.onClose(wx.EVT_BUTTON)
+		app.frame.socketWorker.sendEvent(["EVT_ADMIN",self.machine,app.signOnFrame.userIDnumber,"CHECKOUT"])
+		app.frame.timer.Start()
+
 		return
 	def ReleaseID(self,event):
+		app.frame.timer.Stop()
+		self.onClose(wx.EVT_BUTTON)
 		app.adminFrame.socketWorker.sendEvent(["EVT_RELEASE",self.machine,app.signOnFrame.userIDnumber,"TRUE"])
+		app.frame.timer.Start()
 class popupFrame(wx.Frame):
 	def __init__(self,parent, machine):
 		"""Constructor"""
@@ -1138,16 +1127,18 @@ class PrinterFrame(wx.Frame):
 		
 		that.optionalBtn.Unbind(wx.EVT_BUTTON)
 		that.submitBtn.Unbind(wx.EVT_BUTTON)
+		that.submitBtn.Disable()
 		
 		if status == "USER":
 			that.optionalBtn.SetLabel(" RELEASE ")
-			that.submitBtn.SetLabel(" OPEN ")
+			that.submitBtn.SetLabel(" RETURN ")
 			that.optionalBtn.Bind(wx.EVT_BUTTON, that.ReleaseID)
 		else:
-			that.submitBtn.SetLabel(" OPEN ")
+			that.submitBtn.SetLabel(" CHECKOUT ")
 			if status == "DISABLED":
 				that.optionalBtn.SetLabel(" ENABLE ")
 			elif status == "ENABLED":
+				that.submitBtn.Enable()
 				that.optionalBtn.SetLabel(" DISABLE ")
 			that.optionalBtn.Bind(wx.EVT_BUTTON, that.StatusChange)
 		
@@ -1433,6 +1424,28 @@ class PrinterFrame(wx.Frame):
 			self.timeInputFrame.Show()
 			self.timeInputFrame.MakeModal(True)
 			return
+		elif command == "EVT_ADMIN":
+			machine = infoList[1]
+			solenoid = str((int(machine[-2:])-1) - ((int(app.lockerNumber) - 1) * 16)) + '\n'
+			machineLocker = str(int(machine[-2:])-1)+'\n'
+			try:
+				ARDUINO.write(solenoid)
+			except Exception as e:
+				print e
+				message = "Solenoid failed...please see an admin"
+				success = False
+				#Need to add an ID release here....a good one anyway
+				self.socketWorker.sendEvent(["EVT_RELEASE",machine,app.signOnFrame.userIDnumber,"False"])
+			else:
+				message = machine + " SUCCESSFULLY CHECKED OUT\n\nPlease remember to close the door"
+				success = True
+			successDlg = wx.MessageDialog(self, message, "SUCCESS", wx.OK | wx.CENTRE)
+			successDlg.ShowModal()
+			successDlg.Close()
+			successDlg.Destroy()
+			if success:
+				self.socketWorker.sendEvent(["EVT_SETUP",MACHINENAME,"False",machine])
+			return
 		elif command == "EVT_START":
 			machine = infoList[1]
 			if MACHINENAME.startswith("LAPTOP"):
@@ -1717,6 +1730,8 @@ class PrinterFrame(wx.Frame):
 					self.Layout()
 					self.expireTimer.Start(1000)
 				return
+			elif errorList[0] == "ADMIN":
+				errorMsg = "This machine was checked out by an ADMIN\n\nThat same ADMIN must return it using the Normal Console"
 			else:
 			#this fails if the user ID has already been released from the server DB, it's not really an error, but helpful for debugging
 				return

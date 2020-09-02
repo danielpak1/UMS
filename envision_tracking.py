@@ -104,7 +104,11 @@ else:
 if machineName.startswith('front') and not debug:
 	import serial
 	#xbee behaves like a keyboard on the listed port and the listed baudrate
-	xbee = serial.Serial(port = '/dev/ttyUSB0', baudrate=9600, parity = serial.PARITY_NONE, stopbits = serial.STOPBITS_ONE, bytesize=serial.EIGHTBITS)
+	try:
+		xbee = serial.Serial(port = '/dev/ttyUSB0', baudrate=9600, parity = serial.PARITY_NONE, stopbits = serial.STOPBITS_ONE, bytesize=serial.EIGHTBITS)
+	Exception as e:
+		print e
+		xbee=None
 else:
 	xbee=None
 

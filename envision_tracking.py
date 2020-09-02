@@ -19,7 +19,7 @@ import socket #communicate, via a socket, to external (or local!) server
 import wx.lib.agw.pybusyinfo as PBI
 
 #Version Tracking
-version = "v182"
+version = "v183"
 """
 ##TODO for 75:
 - add logger
@@ -34,6 +34,7 @@ version = "v182"
 - Full kill for threaded group in MSW....this is online somewhere -> otherwise there's a bug if a dialog is open when countdown expires
 
 #CHANGELOG
+--- 183: Added MQTT client to front-desk, sends MQTT messages to tower lamps after sign-in attempts
 --- 180: changed line 1200 to stop the expireTimer when popupwindow is called (thread started or restarted)
 		hopefully this prevent double counting and timer freezing?
 --- 179: contacting server busy box, added redlight for front desk DENY responses
@@ -87,6 +88,17 @@ else:
 #haven't implemented a debug mode yet, so this is a useless variable
 debug = False
 
+
+# MQTT Parameters for broker hosted on the EnVision Server
+# Front Desk Sign-In attempts published to 'envision/front_desk/sign_in'
+MQTT_SERVER_IP = "192.168.111.111"
+MQTT_PORT = 1883
+MQTT_SIGN_IN_TOPIC   = "envision/front_desk/sign_in"
+
+# Callback when connection successfully established to MQTT Server
+def mqtt_on_connect(client, userdata, flags, rc):
+	print "MQTT connected to IP " + MQTT_SERVER_IP
+
 #machine name is passed in command line to identify which equipment is being controlled
 #this name is used to communicate to the socket-server who is passing commands
 if len(sys.argv) > 1:
@@ -103,12 +115,20 @@ else:
 #front desk has control of wireless xbees, pyserial provides the control
 if machineName.startswith('front') and not debug:
 	import serial
-	#xbee behaves like a keyboard on the listed port and the listed baudrate
+	import paho.mqtt.client as mqtt
+
+	mqtt_client = mqtt.Client()
+	mqtt_client.on_connect = mqtt_on_connect
+
+	# TODO CRITICAL connect in separate thread so that it doesn't hang client code
 	try:
-		xbee = serial.Serial(port = '/dev/ttyUSB0', baudrate=9600, parity = serial.PARITY_NONE, stopbits = serial.STOPBITS_ONE, bytesize=serial.EIGHTBITS)
-	except Exception as e
-		print e
-		xbee=None
+		mqtt_client.connect(MQTT_SERVER_IP, MQTT_PORT, 60)
+		mqtt_client.loop_start();
+	except:
+		print "[MQTT Client]: Connection to MQTT client failed, proceeding w/o MQTT functionality"
+
+	#xbee behaves like a keyboard on the listed port and the listed baudrate
+	xbee = serial.Serial(port = '/dev/ttyUSB0', baudrate=9600, parity = serial.PARITY_NONE, stopbits = serial.STOPBITS_ONE, bytesize=serial.EIGHTBITS)
 else:
 	xbee=None
 
@@ -531,7 +551,7 @@ class LightThread(threading.Thread):
 		pass
 	#required function by threading.start(), light() is redundant but kept it anyway
 	def run(self):
-		self.RUN_FLAG = TRUE
+		pass
 	#function to turn the specified light on and off 
 	def light(self,value):
 		#self.serialWorker = serialThread()
@@ -539,9 +559,16 @@ class LightThread(threading.Thread):
 		#while (self.serialWorker.RUN_THREAD):
 		if value == wx.ID_YES:
 			xbee.write("<OK>")
+			try:
+				mqtt_client.publish(MQTT_SIGN_IN_TOPIC, "<OK>");
+			except:
+				print "[MQTT Client]: MQTT Publish Failed"
 		elif value == wx.ID_NO:
 			xbee.write("<DENY>")
-		time.sleep(2);
+			try:
+				mqtt_client.publish(MQTT_SIGN_IN_TOPIC, "<DENY>");
+			except:
+				print "[MQTT Client]: MQTT Publish Failed"
 	
 #create the frame, inside the app, that holds the panel, and all of the functionality
 #this is the main body of the GUI...everything originates from here
@@ -1323,7 +1350,7 @@ class MainWindow(wx.Frame):
 
 #main class for the application		
 class EnVisionApp(wx.App):
-    def OnInit(self):
+	def OnInit(self):
 		#title of the Application
 		self.name = "EnVision-Tracker"
 		#Check that the application isn't already running...it could get hairy if it was

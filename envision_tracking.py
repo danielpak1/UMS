@@ -128,7 +128,11 @@ if machineName.startswith('front') and not debug:
 		print "[MQTT Client]: Connection to MQTT client failed, proceeding w/o MQTT functionality"
 
 	#xbee behaves like a keyboard on the listed port and the listed baudrate
-	xbee = serial.Serial(port = '/dev/ttyUSB0', baudrate=9600, parity = serial.PARITY_NONE, stopbits = serial.STOPBITS_ONE, bytesize=serial.EIGHTBITS)
+	try:
+		xbee = serial.Serial(port = '/dev/ttyUSB0', baudrate=9600, parity = serial.PARITY_NONE, stopbits = serial.STOPBITS_ONE, bytesize=serial.EIGHTBITS)
+	except Exception as e:
+		print e
+		xbee=None
 else:
 	xbee=None
 
@@ -153,8 +157,8 @@ envisionVersion = "EnVision Maker Studio (" +version + ")\n< " +machineName+ " >
 maxPrintLength = 5
 
 #address to communicate to the server on
-#serverAddress = 'localhost'
-serverAddress = 'envision-local'
+serverAddress = 'localhost'
+#serverAddress = 'envision-local'
 #if machine is in maintenace mode, disabled = True
 disabled = False
 
@@ -604,23 +608,23 @@ class MainWindow(wx.Frame):
 		if disabled:
 		#is the machine in maintenance mode?
 			if machineName.startswith('laser') or machineName.startswith("vacuum") or machineName.startswith("drill"):
-				self.bmp = wx.Bitmap("maintenance.jpg")
+				self.bmp = wx.Bitmap("./images/maintenance.jpg")
 				
 			else:
-				self.bmp = wx.Bitmap("maintenanceLarge.jpg")
+				self.bmp = wx.Bitmap("./images/maintenanceLarge.jpg")
 				self.isPrinter = True
 			self.brandingLabel = machineName + " is currently not working\nThank you for your patience"
 			self.brandingFont = wx.Font(20, wx.DECORATIVE, wx.ITALIC, wx.LIGHT)
 		elif machineName.startswith('front'):
-			self.bmp = wx.Bitmap("front-desk.jpg")
+			self.bmp = wx.Bitmap("./images/front-desk.jpg")
 			self.brandingFont = wx.Font(20, wx.DECORATIVE, wx.ITALIC, wx.BOLD)
 			self.lightWorker = LightThread(self)
 			self.lightWorker.start()
 		elif machineName.startswith('laser') or machineName.startswith("vacuum") or machineName.startswith("drill"):
-			self.bmp = wx.Bitmap("touch_screen.jpg")
+			self.bmp = wx.Bitmap("./images/touch_screen.jpg")
 			self.brandingFont = wx.Font(12, wx.DECORATIVE, wx.ITALIC, wx.LIGHT)
 		else:
-			self.bmp = wx.Bitmap("kiosk.jpg")
+			self.bmp = wx.Bitmap("./images/kiosk.jpg")
 			self.brandingFont = wx.Font(24, wx.DECORATIVE, wx.ITALIC, wx.LIGHT)
 			self.isPrinter = True
 		
@@ -969,7 +973,7 @@ class MainWindow(wx.Frame):
 		global inputList
 		
 		#pseudo buffer for inputList
-		if len(inputList) > 50:
+		if len(inputList) > 70:
 		#if the buffer overflows, reset and return
 			inputList=[]
 			return
@@ -984,7 +988,7 @@ class MainWindow(wx.Frame):
 			wx.MessageBox("Please Use The ID-Reader", "ERROR")
 			return
 		#ascii code 36 is $ and is the start and trail char of the magreader
-		elif keycode == 36:
+		elif keycode == 37:
 			#if present, start accepting characters into the inputList
 			acceptString = True
 			inputList.append(keycode)
@@ -994,7 +998,7 @@ class MainWindow(wx.Frame):
 		#acceptString is only True if string started with a $
 			if keycode == wx.WXK_RETURN:
 				#if return is pressed, make sure the last character is $
-				if inputList[-1] == 36:
+				if inputList[-1] == 63:
 				#if True, join the character together in a string
 					inputString = ''.join(chr(i) for i in inputList)
 					
@@ -1039,20 +1043,20 @@ class MainWindow(wx.Frame):
 	def idEnter(self, idInput):
 		print idInput
 		idString = ""
-		if (idInput.startswith('$') and idInput.endswith('$')):
+		if (idInput.startswith('%') and idInput.endswith('?')):
 		#check once more if the string is correclty formatted
 			idChars = list(idInput)
-			if idChars[2] == '9':
+			if idChars[4] == '9':
 			#magstripe reads a '09' for students, replace this with a 'A' per UCSD standards
-				idChars[2]='A'
-			if idChars[2] == '7':
+				idChars[4]='A'
+			if idChars[4] == '7':
 			#magstripe reads '07' for international students, replace with something
-				idChars[2]='U'
-				idChars[3]='0'
-				for i in range(2,idLength):
+				idChars[4]='U'
+				idChars[5]='0'
+				for i in range(4,idLength):
 					idString = idString + idChars[i]
 			else:	
-				for i in range(2,idLength):
+				for i in range(4,idLength):
 					idString = idString + idChars[i]
 
 			self.userIDnumber = idString #set the current user to this ID string

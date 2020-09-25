@@ -113,9 +113,12 @@ class MainWindow(wx.Frame):
 		self.firstLinePanel = wx.Panel(self.panel_1, wx.ID_ANY)
 		self.firstLineSizer = wx.BoxSizer(wx.HORIZONTAL)
 		self.cellLine = wx.StaticLine(self.firstLinePanel, style=wx.LI_HORIZONTAL)
-		self.hiddenTC = wx.TextCtrl(self.panel_1, wx.ID_ANY, "")
-		self.hiddenTC.SetFocus()
-		self.hiddenTC.Hide()
+		#self.hiddenTC = wx.TextCtrl(self.panel_1, wx.ID_ANY, "")
+		#self.hiddenTC.SetFocus()
+		#self.hiddenTC.Hide()
+		
+		#establish a listener thread. This allows the GUI to respond to spawned processes. In this case the socket process
+		pub.subscribe(self.socketListener, "socketListener")
 		
 		for i in xrange(NUMSTUDENTS):
 			self.rows.append(Student(self,i))

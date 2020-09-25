@@ -17,6 +17,7 @@ READER_LENGTH = 39
 ASCII_START = 37
 ASCII_END = 63
 IDLENGTH = 10
+MACHINENAME = "ROSTER"
 
 class Student:
 	def __init__(self,parent,num):
@@ -228,6 +229,7 @@ class MyApp(wx.App):
 if __name__ == "__main__":
 	app = MyApp(0)
 	app.frame = MainWindow()
+	app.frame.socketWorker.sendEvent(["EVT_CLASSES",MACHINENAME,"False","False"])
 	app.frame.Show()
 	#wx.lib.inspection.InspectionTool().Show()
 	app.MainLoop()

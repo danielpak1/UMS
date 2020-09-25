@@ -9,7 +9,7 @@ May 2016
 All Rights Reserved
 """
 
-version = "v502"
+version = "v600"
 """
 --300 swapped out custom relay boards for KasaSMartPowerStrips
 -- 223 added laptop kiosk functionalities
@@ -111,7 +111,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		returnInfo = []
 		rosterInfo = envisionSS.oecDB.checkRoster(user)
 		#return values are exists, full_name, section_ID
-		userInfo = envisionSS.oecDB.checkID(machine,user)
+		userInfo = envisionSS.oecDB.checkID("ROSTER",user)
 		#return value is Waiver, Certification, Admin, Supervisor, Major, Class_level, Suspended
 		enrolled = rosterInfo[0]
 		full_name = rosterInfo[1]
@@ -130,7 +130,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 				returnInfo.append("OK")
 				returnInfo.append("CLEARED")
 			else:
-				logger.info("Section IDs Mismatch: %s, $s",currentSection, dbSection)
+				logger.info("Section IDs Mismatch: %s, %s",currentSection, dbSection)
 				returnInfo.append("DENY")
 				returnInfo.append("WRONGSECTION")
 		else:
@@ -573,16 +573,17 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 	def process(self, packet, clientIP):
 		#incoming packet structure: EVENT, MACHINE, USER, INFO
 		#reply packet structure: EVENT, OK/DENY, INFO
-		logger.info("Packet contains %s",packet)
-		command = packet[0]
-		machine = packet[1]
-		user = packet[2]
-		info = packet[3].split("|")
-		#envisionSS.connectDB("envision") #connect to the envision db
 		reply=[]
-		reply.append(command)#add the event to the reply
-		acceptedMachines = ["PRINTER","CASHIER","LAPTOP"]
 		if len(packet) == 4:
+			logger.info("Packet contains %s",packet)
+			command = packet[0]
+			machine = packet[1]
+			user = packet[2]
+			info = packet[3].split("|")
+			#envisionSS.connectDB("envision") #connect to the envision db
+			reply.append(command)#add the event to the reply
+			acceptedMachines = ["PRINTER","CASHIER","LAPTOP"]
+		
 		#verify packet integrity
 			#e4Connect = envisionSS.envisionDB.connectDB()
 			#oecConnect = envisionSS.oecDB.connectDB()
@@ -604,7 +605,8 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 					reply.extend(("ERROR","DENY","BADMACHINE"))
 				else:
 					if command == "EVT_ROSTER":
-						reply.extend(self.CheckRoster(user)
+						section = info[0]
+						reply.extend(self.CheckRoster(user,section))
 					elif command =="EVT_CHECKID":
 						if info[0] == "TRUE":
 							if machine in clientDict and clientIP == clientDict[machine]:
@@ -905,8 +907,9 @@ class DatabaseHandler():
 		query = 'SELECT enrollment_status,full_name,section_id from envision_roster where pid ="'+userID+'";'
 		results = self.executeQuery(query)
 		if len(results) != 0:
-			for i,result in enumerate(results[0])
-				returmMsg[i]=result
+			logger.info("Multiple sections found")
+			for i,result in enumerate(results[0]):
+				returnMsg[i]=result
 			if len(results) > 1:
 				for i in xrange(1,len(results)):
 					returnMsg.append(results[i][2])

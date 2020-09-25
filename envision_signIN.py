@@ -98,7 +98,7 @@ class MainWindow(wx.Frame):
 	def __init__(self):
 		self.inputList = [] #stores keyboard characters as they come in
 		self.acceptString = False #will the panel accept keyboard input?
-		self.classList = {}
+		self.classList = []
 		self.classHeaders = ["section_id","course","number","day","startTime","endTime"]
 
 		styleFlags = wx.DEFAULT_FRAME_STYLE # | wx.NO_BORDER# | wx.FRAME_NO_TASKBAR

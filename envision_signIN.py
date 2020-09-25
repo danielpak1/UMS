@@ -119,6 +119,9 @@ class MainWindow(wx.Frame):
 		
 		#establish a listener thread. This allows the GUI to respond to spawned processes. In this case the socket process
 		pub.subscribe(self.socketListener, "socketListener")
+		#create a socket instance and start it
+		self.socketWorker = SocketThread(self,None)
+		self.socketWorker.start()
 		
 		for i in xrange(NUMSTUDENTS):
 			self.rows.append(Student(self,i))

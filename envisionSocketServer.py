@@ -83,7 +83,37 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		else:
 			logger.debug("%s not found in availableMachines",machine)
 			return False
-			
+	def CheckRoster(self,user,currentSection):
+		returnInfo = []
+		rosterInfo = envisionSS.oecDB.checkRoster(user)
+		#return values are exists, full_name, section_ID
+		userInfo = envisionSS.oecDB.checkID(machine,user)
+		#return value is Waiver, Certification, Admin, Supervisor, Major, Class_level, Suspended
+		enrolled = rosterInfo[0]
+		full_name = rosterInfo[1]
+		dbSection = rosterInfo[2]
+		admin = userInfo[2]
+		supervisor = userInfo[3]
+		#check admin and supervisor status first
+		if admin == "True" or supervisor == "True":
+			logger.info("Roster Admin / Supervisor")
+			returnInfo.append("OK")
+			returnInfo.append("SUPERVISOR")
+			return returnInfo
+		if enrolled != "False":
+			if currentSection == dbSection:
+				logger.info("Section ID match")
+				returnInfo.append("OK")
+				returnInfo.append("CLEARED")
+			else:
+				logger.info("Section IDs Mismatch: %s, $s",currentSection, dbSection)
+				returnInfo.append("DENY")
+				returnInfo.append("WRONGSECTION")
+		else:
+			logger.info("Student Not Enrolled")
+			returnInfo.append("DENY")
+			returnInfo.append("NOTENROLLED")
+		return returnInfo
 	def CheckID(self,machine,user):
 	#check if the ID is in the OEC DB, and return detailed info about the user
 		userInfo = envisionSS.oecDB.checkID(machine,user)
@@ -512,10 +542,18 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		acceptedMachines = ["PRINTER","CASHIER","LAPTOP"]
 		if len(packet) == 4:
 		#verify packet integrity
+<<<<<<< Updated upstream
 			e4Connect = envisionSS.envisionDB.connectDB()
 			oecConnect = envisionSS.oecDB.connectDB()
 			if e4Connect and oecConnect:
 				goodMachine = True if machine.split("_")[0] in acceptedMachines else False
+=======
+			#e4Connect = envisionSS.envisionDB.connectDB()
+			#oecConnect = envisionSS.oecDB.connectDB()
+			#e4Connect = envisionSS.envisionDB.db.
+			if True:
+				kiosk = True if machine.split("_")[0] in acceptedMachines else False
+>>>>>>> Stashed changes
 				#laptopMachine = True if machine.split("_")[0] == "LAPTOP" else False
 				loggedMachine = self.CheckMachine(machine)
 				if loggedMachine:
@@ -526,11 +564,22 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 					userID = loggedMachine[5]
 					machineStatus = loggedMachine[6]
 					logger.debug("machine thread is %s", threadName)
-				if not (loggedMachine or goodMachine):
+				if not (loggedMachine or kiosk):
 					logger.debug("%s is not Logged or Good. Not proceeding", machine)
 					reply.extend(("ERROR","DENY","BADMACHINE"))
 				else:
+<<<<<<< Updated upstream
 					if command =="EVT_CHECKID":
+=======
+					if command == "EVT_ROSTER":
+						reply.extend(self.CheckRoster(user)
+					elif command =="EVT_CHECKID":
+						if info[0] == "TRUE":
+							if machine in clientDict and clientIP == clientDict[machine]:
+								pass
+							else:
+								self.updateClientDict(machine,clientIP)
+>>>>>>> Stashed changes
 						reply.extend(self.CheckID(machine, user))
 					elif command == "EVT_CONNECT":
 					#Event called when a machine first starts and connects to the socket
@@ -803,6 +852,70 @@ class DatabaseHandler():
 		self.cur = None
 		logger.debug("DB Closed")
 	
+<<<<<<< Updated upstream
+=======
+	def executeQuery(self,query, fetch=True, logID=False):
+		try:
+			thisCnx = self.db.get_connection()
+		except errors.PoolError:
+			for i in range(1,5):
+				time.sleep(1)
+				logger.warning("Not enough Pool Connections, retrying...%s",i)
+				try:
+					thisCnx = self.db.get_connection()
+				except errors.PoolError:
+					pass
+				else:
+					break
+			if i>=4:
+				return None
+		except errors.Error as e:
+			logger.warning("Database has disconnected, retrying")
+			self.db.reconnect(attempts=5,delay=10)
+		except Exception as e:
+			logger.critical("Unable to connect to database: %s! Can't proceed", self.host)
+			return None
+		else:
+			#print "connected"
+			#print query
+			logger.debug("Query: %s", query)
+			thisCursor = thisCnx.cursor()
+			thisCursor.execute(query) #execute the query
+			if fetch:
+				result = thisCursor.fetchall()
+				logger.debug("Query result: %s", result)
+			else:
+				if logID:
+					query = 'SELECT LAST_INSERT_ID();'#keep the entry ID in a variable to use later
+					thisCursor.execute(query) #execute the query
+					result = thisCursor.fetchall()
+					result = str(result[0][0])
+				else:
+					result = None
+			thisCnx.commit()
+			thisCursor.close()
+			thisCnx.close()
+			return (result)#fetch all of the results 
+
+	def checkRoster(self,user):
+		#return values are exists, full_name, section_ID(s)
+		returnMsg = ["False","False","False"]
+		userID = user.lstrip('0')
+		query = 'SELECT enrollment_status,full_name,section_id from envision_roster where pid ="'+userID+'";'
+		results = self.executeQuery(query)
+		if len(results) != 0:
+			for i,result in enumerate(results[0])
+				returmMsg[i]=result
+			if len(results) > 1:
+				for i in xrange(1,len(results)):
+					returnMsg.append(results[i][2])
+		logger.debug("Roster result: %s", returnMsg)
+		return returnMsg
+				
+			
+		
+		return returnMsg
+>>>>>>> Stashed changes
 	#check that the user ID exists, and that the appropriate training has been completed
 	def checkID(self,machine,user):
 		userID = user.lstrip('0') #strip leading zeros from the userID passed from the client
@@ -820,7 +933,7 @@ class DatabaseHandler():
 		elif machine.startswith("DRILL"):
 			cred = "dp"
 		else:
-			cred = "waiver"						
+			cred = "waiver"
 		#DB query pulls all relevant details from OEC DB
 		query = 'SELECT waiver,'+cred+',role,supervisor,dept,class_level,suspended FROM makerspace.users LEFT JOIN makerspace.users_access USING (user_id) WHERE (uceno ="'+userID+'" OR pid ="'+userID+'");'
 		self.cur.execute(query) #execute the query

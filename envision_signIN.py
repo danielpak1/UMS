@@ -304,10 +304,7 @@ class MainWindow(wx.Frame):
 	#this function is called if the socketListener determines that the packet was processed but not approved by the server
 	def processDeny(self,command, error):
 		#functions expects two lists, one command and containing any relevant error messages
-		now = datetime.datetime.now()
 		errorList = error.split("|")
-		if machineName.upper().startswith("FRONT"):
-			self.lightWorker.light(wx.ID_NO)
 		if command == "EVT_CHECKID":
 		#if check id fails, explain why
 			if errorList[0] == "WAIVER":

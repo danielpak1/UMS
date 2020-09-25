@@ -3,6 +3,10 @@
 
 import wx
 import wx.lib.inspection
+from wx.lib.pubsub import pub #used to "listen" for messages sent by spawned GUI windows
+import threading, subprocess, signal #used for threading external programs
+import socket #communicate, via a socket, to external (or local!) server
+import wx.lib.agw.pybusyinfo as PBI
 
 #platform check, useful for GUI layout
 if wx.Platform == "__WXMSW__":
@@ -18,6 +22,57 @@ ASCII_START = 37
 ASCII_END = 63
 IDLENGTH = 10
 MACHINENAME = "ROSTER"
+SERVERADDRESS='localhost'
+SERVERPORT=6969
+
+class SocketThread(threading.Thread):
+	#initializer, takes parent and a message as inputs
+	def __init__(self,parent,message):
+		threading.Thread.__init__(self)
+		self.parent=parent
+		self.message=message
+	#called automatically by the start() function (implicitly defined by the threading class)... required
+	def run(self):
+		pass
+	#use this function to send message through the socket to the server. Function expects a packet length of 3
+	def sendEvent(self,eventPacket):
+		wx.CallAfter(self.parent.contactServer)
+		wx.GetApp().ProcessPendingEvents()
+		# convert all messages to uppercase
+		packet = [x.upper() for x in eventPacket]
+		#form the list into a string delineated by a SPACE 
+		packetStr = ' '.join(packet)
+		try:
+
+			#connect to the server on the port specified
+			client = socket.create_connection((SERVERADDRESS, SERVERPORT))
+			#send the packet string
+			client.send(packetStr)
+			#receive a response in a buffer, and split string into a list
+			reply=(client.recv(1024)).split()
+			wx.CallAfter(self.parent.closeSocket)
+			wx.GetApp().ProcessPendingEvents()
+		except Exception, msg:
+			#call this function if the connection was a failure
+			wx.CallAfter(self.parent.socketClosed,wx.EVT_CLOSE,msg)
+		else:
+			if len(reply) == 3:
+			#make sure the reply packet is properly formed
+				if reply[0] == packet[0] and reply[1]:
+				#make sure the correct packet was received by comparing the outgoing and the incoming EVENT (EVT)
+					#send the reply to the pub listener "socketListener"
+					pub.sendMessage("socketListener", sent=packet, reply=reply)
+			else:
+				#alert the GUI that the packet was incorrect
+				wx.CallAfter(self.parent.socketClosed,wx.EVT_CLOSE,"BAD-FORMED REPLY")
+	#action to take on closing the socket 
+	def closeSocket(self):
+		try:
+			client.shutdown(socket.SHUT_RDWR)
+			client.close()
+		except Exception, msg:
+			#force close on an exception
+			wx.CallAfter(self.parent.socketClosed,wx.EVT_CLOSE,msg)
 
 class Student:
 	def __init__(self,parent,num):
@@ -177,6 +232,86 @@ class MainWindow(wx.Frame):
 		print idList
 		self.userIDnumber = idList #set the current user to this ID string
 			#self.socketWorker.sendEvent(["EVT_CHECKID",MACHINENAME,self.userIDnumber,"True"]) #check the ID record on the server
+
+	#this function listens to the published messages from the socket process
+	def socketListener(self, sent=None, reply=None):
+	#function expects two lists of strings 
+		#set variables for clarity
+		command = sent[0]
+		user = sent[1]
+		machine = sent[2]
+		machineTime = sent[3]
+		
+		event = reply[0]
+		status = reply[1]
+		statusInfo = reply[2]
+		
+		if status == "OK":
+		#checks if the command was accepted
+			self.processReply(event,statusInfo)
+		elif status == "DENY":
+		#checks if the command was rejected
+			self.processDeny(event, statusInfo)
+		elif status == "DBERROR":
+		#problem with the process directive on the socketServer, this will resend the packet indefinitely (YIKES)
+			#time.sleep(3)
+			#self.socketWorker.sendEvent(command,user,machine,machineTime)
+			errorMsg = "DATABASE ERROR\n\n Please try again"
+			wx.MessageBox(errorMsg,"ERROR")
+
+	def contactServer(self):
+		message = "Contacting Server..."
+		self.busyMsg = PBI.PyBusyInfo(message, parent=None, title=" ")
+		time.sleep(0.1)
+		try:
+			wx.Yield()
+		except Exception as e:
+			print e
+	def closeSocket(self):
+		try:
+			del self.busyMsg
+		except Exception as e:
+			print e
+			print "busy message didn't exist"			
+	def socketClosed(self, event, errorMsg):
+		self.Show()
+		self.Raise()
+		errorMsg = str(errorMsg)
+		errorDlg = wx.MessageDialog(self, "Connection to SERVER failed!\n\n"+errorMsg+"\n\nPlease see an Administrator", "ERROR", wx.OK | wx.ICON_ERROR | wx.CENTER)
+		result = errorDlg.ShowModal()
+		if result == wx.ID_OK:
+			errorDlg.Destroy()
+	#called after the socketlistener determines the packets were properly formed, and were accepted by the server
+	def processReply(self, command, info):
+		#function expects two strings: the command and the information returned by the server
+		infoList = info.split("|") #split the info string into a list, delineated by | ... 
+		#extraneous info is often bundled together in one string to keep the reply packet uniform
+		if command == "EVT_START":
+		#A start event is called to start the appropirate program in a new thread
+			if infoList[0]=="FRONT":
+			#Front desk doesn't have a program to thread
+				pass
+			else:
+				self.startSelect(wx.EVT_BUTTON)
+
+	#this function is called if the socketListener determines that the packet was processed but not approved by the server
+	def processDeny(self,command, error):
+		#functions expects two lists, one command and containing any relevant error messages
+		now = datetime.datetime.now()
+		errorList = error.split("|")
+		if machineName.upper().startswith("FRONT"):
+			self.lightWorker.light(wx.ID_NO)
+		if command == "EVT_CHECKID":
+		#if check id fails, explain why
+			if errorList[0] == "WAIVER":
+				errorMsg = 'Your Responsbility Contract has expired! (>90 days)\n\nPlease log into the EnVision Portal to complete'
+			elif errorList[0] == "GRAD":
+				errorMsg = "Engineering Graduate Use is Restricted \n\n Please see an admin for other options on campus"
+			elif errorList[0] == "CERT":
+				errorMsg = "You have not completed the training for this machine!\n\nPlease log into the EnVision Portal to complete"
+			else:
+				errorMsg = error
+		
 class MyApp(wx.App):
 	def OnInit(self):
 		self.bitmaps = {}

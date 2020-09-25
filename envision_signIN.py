@@ -3,6 +3,10 @@
 
 import wx
 import wx.lib.inspection
+from wx.lib.pubsub import pub #used to "listen" for messages sent by spawned GUI windows
+import threading, subprocess, signal #used for threading external programs
+import socket #communicate, via a socket, to external (or local!) server
+import wx.lib.agw.pybusyinfo as PBI
 
 #platform check, useful for GUI layout
 if wx.Platform == "__WXMSW__":
@@ -11,12 +15,64 @@ if wx.Platform == "__WXMSW__":
 else:
 	GTK = True
 	MSW = False
+
 NUMSTUDENTS = 20
 SIZERPAD = 10
 READER_LENGTH = 39
 ASCII_START = 37
 ASCII_END = 63
 IDLENGTH = 10
+SERVERADDRESS = 'localhost'
+SERVERPORT = 6969
+
+class SocketThread(threading.Thread):
+	#initializer, takes parent and a message as inputs
+	def __init__(self,parent,message):
+		threading.Thread.__init__(self)
+		self.parent=parent
+		self.message=message
+	#called automatically by the start() function (implicitly defined by the threading class)... required
+	def run(self):
+		pass
+	#use this function to send message through the socket to the server. Function expects a packet length of 3
+	def sendEvent(self,eventPacket):
+		#display a waiting message
+		wx.CallAfter(self.parent.contactServer)
+		wx.GetApp().ProcessPendingEvents()
+		# convert all messages to uppercase
+		packet = [x.upper() for x in eventPacket]
+		#form the list into a string delineated by a SPACE 
+		packetStr = ' '.join(packet)
+		try:
+			#connect to the server on the port specified
+			client = socket.create_connection((SERVERADDRESS, SERVERPORT))
+			#send the packet string
+			client.send(packetStr)
+			#receive a response in a buffer, and split string into a list
+			reply=(client.recv(1024)).split()
+			wx.CallAfter(self.parent.closeSocket)
+			wx.GetApp().ProcessPendingEvents()
+		except Exception, msg:
+			#call this function if the connection was a failure
+			wx.CallAfter(self.parent.socketClosed,wx.EVT_CLOSE,msg)
+		else:
+			if len(reply) == 3:
+			#make sure the reply packet is properly formed
+				if reply[0] == packet[0] and reply[1]:
+				#make sure the correct packet was received by comparing the outgoing and the incoming EVENT (EVT)
+					#send the reply to the pub listener "socketListener"
+					pub.sendMessage("socketListener", sent=packet, reply=reply)
+			else:
+				#alert the GUI that the packet was incorrect
+				wx.CallAfter(self.parent.socketClosed,wx.EVT_CLOSE,"BAD-FORMED REPLY")
+	#action to take on closing the socket 
+	def closeSocket(self):
+		try:
+			client.shutdown(socket.SHUT_RDWR)
+			client.close()
+		except Exception, msg:
+			#force close on an exception
+			wx.CallAfter(self.parent.socketClosed,wx.EVT_CLOSE,msg)
 
 class Student:
 	def __init__(self,parent,num):
@@ -61,6 +117,12 @@ class MainWindow(wx.Frame):
 		self.hiddenTC.SetFocus()
 		self.hiddenTC.Hide()
 		
+		#establish a listener thread. This allows the GUI to respond to spawned processes. In this case the socket process
+		pub.subscribe(self.socketListener, "socketListener")
+		#create a socket instance and start it
+		self.socketWorker = SocketThread(self,None)
+		self.socketWorker.start()
+		
 		for i in xrange(NUMSTUDENTS):
 			self.rows.append(Student(self,i))
 		self.__do_layout()
@@ -100,6 +162,56 @@ class MainWindow(wx.Frame):
 		self.focusPanel.Bind(wx.EVT_CHAR,self.onKeyPress)
 		self.focusPanel.SetFocus()
 		self.focusPanel.Bind(wx.EVT_KILL_FOCUS, self.onFocusLost)
+
+
+	#this function listens to the published messages from the socket process
+	def socketListener(self, sent=None, reply=None):
+	#function expects two lists of strings 
+		#set variables for clarity
+		command = sent[0]
+		user = sent[1]
+		machine = sent[2]
+		machineTime = sent[3]
+		
+		event = reply[0]
+		status = reply[1]
+		statusInfo = reply[2]
+		
+		if status == "OK":
+		#checks if the command was accepted
+			self.processReply(event,statusInfo)
+		elif status == "DENY":
+		#checks if the command was rejected
+			self.processDeny(event, statusInfo)
+		elif status == "DBERROR":
+		#problem with the process directive on the socketServer, this will resend the packet indefinitely (YIKES)
+			#time.sleep(3)
+			#self.socketWorker.sendEvent(command,user,machine,machineTime)
+			errorMsg = "DATABASE ERROR\n\n Please try again"
+			wx.MessageBox(errorMsg,"ERROR")
+	def contactServer(self):
+		message = "Contacting Server..."
+		self.busyMsg = PBI.PyBusyInfo(message, parent=None, title=" ")
+		time.sleep(0.1)
+		try:
+			wx.Yield()
+		except Exception as e:
+			print e
+	def closeSocket(self):
+		try:
+			del self.busyMsg
+		except Exception as e:
+			print e
+			print "busy message didn't exist"
+	#this is called if the socket is prematurely closed. Sometimes fires before the system has initialized
+	def socketClosed(self, event, errorMsg):
+		self.Show()
+		self.Raise()
+		errorMsg = str(errorMsg)
+		errorDlg = wx.MessageDialog(self, "Connection to SERVER failed!\n\n"+errorMsg+"\n\nPlease see an Administrator", "ERROR", wx.OK | wx.ICON_ERROR | wx.CENTER)
+		result = errorDlg.ShowModal()
+		if result == wx.ID_OK:
+			errorDlg.Destroy()
 
 	def onFocusLost(self,event):
 		#print "FOCUS LOST!"
@@ -175,7 +287,7 @@ class MainWindow(wx.Frame):
 		idList = ''.join(i for i in idList[1:])
 		print idList
 		self.userIDnumber = idList #set the current user to this ID string
-			#self.socketWorker.sendEvent(["EVT_CHECKID",MACHINENAME,self.userIDnumber,"True"]) #check the ID record on the server
+		self.socketWorker.sendEvent(["EVT_CHECKID",'LECTURE_ROSTER-IN',self.userIDnumber,"True"]) #check the ID record on the server
 class MyApp(wx.App):
 	def OnInit(self):
 		self.bitmaps = {}

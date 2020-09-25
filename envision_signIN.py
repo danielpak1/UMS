@@ -174,7 +174,7 @@ class MainWindow(wx.Frame):
 			self.focusPanel.SetFocus()
 
 	def OnLoad(self):
-		self.socketWorker.sendEvent(["EVT_CLASSES",MACHINENAME,"False","False"])
+		pass
 
 	def OnExit(self,event):
 		#for thread in threading.enumerate():
@@ -375,5 +375,6 @@ if __name__ == "__main__":
 	app = MyApp(0)
 	app.frame = MainWindow()
 	app.frame.Show()
+	app.frame.socketWorker.sendEvent(["EVT_CLASSES",MACHINENAME,"False","False"])
 	#wx.lib.inspection.InspectionTool().Show()
 	app.MainLoop()

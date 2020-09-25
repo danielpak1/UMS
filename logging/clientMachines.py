@@ -368,6 +368,7 @@ class MyApp(wx.App):
 if __name__ == "__main__":
 	app = MyApp(0)
 	app.frame = MainWindow()
+	app.SetTopWindow(app.frame)
 	app.frame.Show()
 	signal.signal(signal.SIGINT,signalINT_handler)
 	app.MainLoop()

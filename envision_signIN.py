@@ -297,7 +297,7 @@ class MainWindow(wx.Frame):
 		#extraneous info is often bundled together in one string to keep the reply packet uniform
 		if command == "EVT_CLASSES":
 			for section in infoList:
-				sectionInfo = section.split("|")
+				sectionInfo = section.split(",")
 				for i,detail in enumerate(sectionInfo):
 					self.classList.append({})
 					self.classList[-1][self.classHeaders[i]]=detail

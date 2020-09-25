@@ -201,7 +201,14 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			returnInfo.append("DENY")
 			returnInfo.append("|".join("UNKNOWN",userInfo))	
 		return returnInfo
-
+	
+	def GetClasses(self):
+		returnInfo = []
+		classes = envisionSS.envisionDB.getClasses()
+		returnInfo.append("OK")
+		returnInfo.append("|".join(classes))
+		return returnInfo
+	
 	def ConnectMachine(self,machine):
 		returnInfo = []
 		if machine.split("_")[0] == "PRINTER":
@@ -607,6 +614,8 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 					if command == "EVT_ROSTER":
 						section = info[0]
 						reply.extend(self.CheckRoster(user,section))
+					elif command == "EVT_CLASSES":
+						reply.extend(self.GetClasses())					
 					elif command =="EVT_CHECKID":
 						if info[0] == "TRUE":
 							if machine in clientDict and clientIP == clientDict[machine]:
@@ -709,11 +718,14 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 					elif command == "EVT_RETURN":
 						reply.extend(self.ReleaseID(machine,user,command))
 						reply[-1] = ('|').join([reply[-1],machine])
+					else:
+						logger.info("Event command not recognized")
+						reply.extend(("DENY","BADEVENT"))
 			else:
-				reply.extend(("ERROR","DENY","DBERROR"))
+				reply.extend(("DENY","DBERROR"))
 		else:
 		#packet is not properly formed by client
-			reply.extend(("ERROR","DENY","BADPACKET"))
+			reply.extend(("DENY","BADPACKET"))
 		
 		self.respond(reply)
 		## Decided to keep the database open until the server is shut. Each new call will reopen the connection anyway, I think this will be okay
@@ -1045,6 +1057,17 @@ class DatabaseHandler():
 					#user exists in the table, and are using another 3d printer...not allowed
 						return "IDINUSE"
 		return False
+
+	def getClasses(self):
+		query = "select sectionID,subject,course,dow,classStart,classEnd from roster_sections"
+		results = self.executeQuery(query)
+		logger.info("Found %s classes",len(results))
+		classes = []
+		for section in results:
+			classes.append(",".join(str(i) for i in section))
+			logger.debug("Adding class: %s",classes[-1])
+		return classes
+
 	#get the list of machines from the machine tables
 	def getMachines(self):
 		query = "SELECT name FROM machines"

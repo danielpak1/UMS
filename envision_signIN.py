@@ -7,6 +7,7 @@ from wx.lib.pubsub import pub #used to "listen" for messages sent by spawned GUI
 import threading, subprocess, signal #used for threading external programs
 import socket #communicate, via a socket, to external (or local!) server
 import wx.lib.agw.pybusyinfo as PBI
+import os, time, sys #basic OS functions
 
 #platform check, useful for GUI layout
 if wx.Platform == "__WXMSW__":
@@ -21,7 +22,7 @@ READER_LENGTH = 39
 ASCII_START = 37
 ASCII_END = 63
 IDLENGTH = 10
-MACHINENAME = "ROSTER"
+MACHINENAME = "LECTURE_ROSTER-IN"
 SERVERADDRESS='localhost'
 SERVERPORT=6969
 

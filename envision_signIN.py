@@ -246,7 +246,7 @@ class MainWindow(wx.Frame):
 		print idString
 		#self.userIDnumber = idList #set the current user to this ID string
 		#check the ID record on the server, info slot is True/False depending on whether I want these machines in etc/hosts
-		self.socketWorker.sendEvent(["EVT_CHECKID",MACHINENAME,idString,"False"]) 
+		self.socketWorker.sendEvent(["EVT_ROSTER",MACHINENAME,idString,"False"]) 
 
 	#this function listens to the published messages from the socket process
 	def socketListener(self, sent=None, reply=None):

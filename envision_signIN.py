@@ -131,6 +131,8 @@ class MainWindow(wx.Frame):
 		self.__do_layout()
 		self.__set_properties()
 		
+		wx.CallAfter(self.OnLoad)
+		
 	def __do_layout(self):
 		#SIZERS
 		self.mainSizer = wx.BoxSizer(wx.VERTICAL)
@@ -171,6 +173,8 @@ class MainWindow(wx.Frame):
 		if self.focusPanel.FindFocus() is None:
 			self.focusPanel.SetFocus()
 
+	def OnLoad(self):
+		self.socketWorker.sendEvent(["EVT_CLASSES",MACHINENAME,"False","False"])
 
 	def OnExit(self,event):
 		#for thread in threading.enumerate():
@@ -370,7 +374,6 @@ class MyApp(wx.App):
 if __name__ == "__main__":
 	app = MyApp(0)
 	app.frame = MainWindow()
-	app.frame.socketWorker.sendEvent(["EVT_CLASSES",MACHINENAME,"False","False"])
 	app.frame.Show()
 	#wx.lib.inspection.InspectionTool().Show()
 	app.MainLoop()

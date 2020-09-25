@@ -100,6 +100,7 @@ class MainWindow(wx.Frame):
 		self.acceptString = False #will the panel accept keyboard input?
 		self.classList = []
 		self.classHeaders = ["section_id","course","number","day","startTime","endTime"]
+		self.sectionOpen = False
 
 		styleFlags = wx.DEFAULT_FRAME_STYLE # | wx.NO_BORDER# | wx.FRAME_NO_TASKBAR
 		if GTK:
@@ -175,7 +176,6 @@ class MainWindow(wx.Frame):
 
 	def OnLoad(self):
 		self.socketWorker.sendEvent(["EVT_CLASSES",MACHINENAME,"False","False"])
-		#pass
 
 	def OnExit(self,event):
 		#for thread in threading.enumerate():
@@ -242,10 +242,11 @@ class MainWindow(wx.Frame):
 		#magstripe reads '07' for international students, replace with something
 			idList[1]='U'
 			idList[2]='0'
-		idList = ''.join(i for i in idList[1:])
-		print idList
-		self.userIDnumber = idList #set the current user to this ID string
-			#self.socketWorker.sendEvent(["EVT_CHECKID",MACHINENAME,self.userIDnumber,"True"]) #check the ID record on the server
+		idString = ''.join(i for i in idList[1:])
+		print idString
+		#self.userIDnumber = idList #set the current user to this ID string
+		#check the ID record on the server, info slot is True/False depending on whether I want these machines in etc/hosts
+		self.socketWorker.sendEvent(["EVT_CHECKID",MACHINENAME,idString,"False"]) 
 
 	#this function listens to the published messages from the socket process
 	def socketListener(self, sent=None, reply=None):
@@ -306,7 +307,13 @@ class MainWindow(wx.Frame):
 				for i,detail in enumerate(sectionInfo):
 					self.classList.append({})
 					self.classList[-1][self.classHeaders[i]]=detail
-			print self.classList
+		if command == "EVT_CHECKID":
+			if infoList[0] == "SUPERVISOR":
+				if self.sectionOpen:
+					self.closeSection()
+				else:
+					self.openSection()
+			#print self.classList
 
 	#this function is called if the socketListener determines that the packet was processed but not approved by the server
 	def processDeny(self,command, error):
@@ -322,7 +329,10 @@ class MainWindow(wx.Frame):
 				errorMsg = "You have not completed the training for this machine!\n\nPlease log into the EnVision Portal to complete"
 			else:
 				errorMsg = error
-		
+	def openSection(self):
+		pass
+	def closeSerion(self):
+		pass
 class MyApp(wx.App):
 	def OnInit(self):
 		self.bitmaps = {}

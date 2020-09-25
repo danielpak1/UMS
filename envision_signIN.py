@@ -98,6 +98,8 @@ class MainWindow(wx.Frame):
 	def __init__(self):
 		self.inputList = [] #stores keyboard characters as they come in
 		self.acceptString = False #will the panel accept keyboard input?
+		self.classList = {}
+		self.classHeaders = ["section_id","course","number","day","startTime","endTime"]
 
 		styleFlags = wx.DEFAULT_FRAME_STYLE # | wx.NO_BORDER# | wx.FRAME_NO_TASKBAR
 		if GTK:
@@ -293,13 +295,13 @@ class MainWindow(wx.Frame):
 		#function expects two strings: the command and the information returned by the server
 		infoList = info.split("|") #split the info string into a list, delineated by | ... 
 		#extraneous info is often bundled together in one string to keep the reply packet uniform
-		if command == "EVT_START":
-		#A start event is called to start the appropirate program in a new thread
-			if infoList[0]=="FRONT":
-			#Front desk doesn't have a program to thread
-				pass
-			else:
-				self.startSelect(wx.EVT_BUTTON)
+		if command == "EVT_CLASSES":
+			for section in infoList:
+				sectionInfo = section.split("|")
+				for i,detail in enumerate(sectionInfo):
+					self.classList.append({})
+					self.classList[-1][self.classHeaders[i]]=detail
+			print self.classList
 
 	#this function is called if the socketListener determines that the packet was processed but not approved by the server
 	def processDeny(self,command, error):

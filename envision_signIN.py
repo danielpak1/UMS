@@ -23,7 +23,7 @@ ASCII_START = 37
 ASCII_END = 63
 IDLENGTH = 10
 MACHINENAME = "LECTURE_ROSTER-IN"
-SERVERADDRESS='localhost'
+SERVERADDRESS='envision-local'
 SERVERPORT=6969
 
 class SocketThread(threading.Thread):
@@ -117,9 +117,8 @@ class MainWindow(wx.Frame):
 		self.firstLinePanel = wx.Panel(self.panel_1, wx.ID_ANY)
 		self.firstLineSizer = wx.BoxSizer(wx.HORIZONTAL)
 		self.cellLine = wx.StaticLine(self.firstLinePanel, style=wx.LI_HORIZONTAL)
-		#self.hiddenTC = wx.TextCtrl(self.panel_1, wx.ID_ANY, "")
-		#self.hiddenTC.SetFocus()
-		#self.hiddenTC.Hide()
+		self.hiddenTC = wx.TextCtrl(self.panel_1, wx.ID_ANY, "", style=wx.TE_PROCESS_ENTER)
+		self.hiddenTC.Hide()
 		
 		#establish a listener thread. This allows the GUI to respond to spawned processes. In this case the socket process
 		pub.subscribe(self.socketListener, "socketListener")
@@ -142,6 +141,7 @@ class MainWindow(wx.Frame):
 		self.mainSizer.Add(self.firstLinePanel,1,wx.EXPAND|wx.ALL,0)
 		self.firstLineSizer.Add(self.cellLine,10, wx.ALIGN_CENTER_VERTICAL)
 		self.firstLinePanel.SetSizer(self.firstLineSizer)
+		
 		for row in self.rows:
 			self.mainSizer.Add(row.rowPanel,1,wx.EXPAND|wx.ALL,0)
 			row.rowSizer.Add(row.nameCell, 10, wx.ALIGN_CENTER_VERTICAL, 0)
@@ -156,10 +156,10 @@ class MainWindow(wx.Frame):
 				row.rowPanel.SetBackgroundColour('white')
 			else:
 				row.rowPanel.SetBackgroundColour('white')
-		
+		self.mainSizer.Add(self.hiddenTC,1,wx.EXPAND)
 		self.panel_1.SetSizer(self.mainSizer)
 		self.SetMinSize((650,500))
-		self.Layout()	
+		self.Layout()
 	
 	def __set_properties(self):
 		# begin wxGlade: MyFrame.__set_properties
@@ -208,13 +208,14 @@ class MainWindow(wx.Frame):
 		keycode = event.GetKeyCode()
 		if keycode == 306:
 			return
-		if len(self.inputList) > 50:
+		if len(self.inputList) > 50 or keycode > 256 or keycode== wx.WXK_RETURN:
 			self.inputList=[]
-			return
-		if keycode > 256:
 			wx.MessageBox("Please Use The ID-Reader", "ERROR")
 			return
 		#ascii code 37 is % and is the start and trail char of the magreader
+		elif keycode == wx.WXK_ESCAPE:
+			self.debugTextControl()
+			return
 		elif keycode == ASCII_START:
 			#if present, start accepting characters into the inputList
 			self.acceptString = True
@@ -224,7 +225,7 @@ class MainWindow(wx.Frame):
 				if self.inputList[-1] == ASCII_END:
 					#join the character together in a string
 					inputString = ''.join(chr(i) for i in self.inputList[3:13])
-					print inputString
+					#print inputString
 					self.idEnter(inputString)
 				#reset the capture variables
 				self.acceptString = False
@@ -248,6 +249,27 @@ class MainWindow(wx.Frame):
 		#check the ID record on the server, info slot is True/False depending on whether I want these machines in etc/hosts
 		self.socketWorker.sendEvent(["EVT_ROSTER",MACHINENAME,idString,"False"]) 
 
+	def debugTextControl(self):
+		self.focusPanel.Unbind(wx.EVT_CHAR)
+		self.focusPanel.Unbind(wx.EVT_KILL_FOCUS)
+		self.hiddenTC.Show()
+		self.mainSizer.Layout()
+		self.Layout()
+		self.hiddenTC.SetFocus()
+		self.hiddenTC.Bind(wx.EVT_TEXT_ENTER, self.processTextBox)
+	def processTextBox(self,event):
+		debugString=self.hiddenTC.GetLineText(0)
+		self.hiddenTC.Clear()
+		#print debugString
+		self.hiddenTC.Hide()
+		self.mainSizer.Layout()
+		self.hiddenTC.Unbind(wx.EVT_TEXT_ENTER)
+		self.focusPanel.Bind(wx.EVT_CHAR,self.onKeyPress)
+		self.focusPanel.SetFocus()
+		self.focusPanel.Bind(wx.EVT_KILL_FOCUS, self.onFocusLost)
+		self.Layout()
+		self.socketWorker.sendEvent(["EVT_ROSTER",MACHINENAME,debugString,"False"])
+		
 	#this function listens to the published messages from the socket process
 	def socketListener(self, sent=None, reply=None):
 	#function expects two lists of strings 
@@ -304,10 +326,11 @@ class MainWindow(wx.Frame):
 		if command == "EVT_CLASSES":
 			for section in infoList:
 				sectionInfo = section.split(",")
+				self.classList.append([])
+				self.classList[-1]={}
 				for i,detail in enumerate(sectionInfo):
-					self.classList.append({})
 					self.classList[-1][self.classHeaders[i]]=detail
-		if command == "EVT_CHECKID":
+		if command == "EVT_ROSTER":
 			if infoList[0] == "SUPERVISOR":
 				if self.sectionOpen:
 					self.closeSection()
@@ -330,9 +353,85 @@ class MainWindow(wx.Frame):
 			else:
 				errorMsg = error
 	def openSection(self):
+		self.choiceFrame = choiceFrame(self,self.classList)
+		self.choiceFrame.Show()
+	def closeSection(self):
 		pass
-	def closeSerion(self):
-		pass
+
+class choiceFrame(wx.Frame):
+	def __init__(self,parent,classList):
+		"""Constructor"""
+		wx.Frame.__init__(self, parent, style= wx.STAY_ON_TOP | wx.NO_BORDER | wx.FRAME_NO_TASKBAR | wx.FRAME_FLOAT_ON_PARENT, title="More Time?",size=(400,250))
+		#wx.Dialog.__init__(self,parent,style= wx.STAY_ON_TOP, title = "MORE TIME?", size = (400,200))
+		self.panel = wx.Panel(self,style=wx.SUNKEN_BORDER,size=(400,250))
+		self.parent = parent
+		self.classChoices = []
+		self.message = "Please Select Section To Open"
+		self.choiceMessage = wx.StaticText(self.panel,label=self.message,style=wx.ALIGN_CENTRE_VERTICAL|wx.ST_NO_AUTORESIZE)
+		for section in classList:
+			sectionString = "Section: " +section["section_id"] + " -- " + section["course"]+section["number"]+", "+section["startTime"]+"-"+section["endTime"]
+			self.classChoices.append(sectionString)
+		print self.classChoices
+		self.radioText = 10*"." + "Choose Section" + 10*"."
+		self.__do_layout()
+		self.MakeModal(True)
+
+	def __do_layout(self):
+		sizer_1 = wx.BoxSizer(wx.VERTICAL)
+		#self.nameCell = wx.StaticText(self.panel, label="", style=wx.ALIGN_CENTRE_VERTICAL|wx.ST_NO_AUTORESIZE)
+		self.radio_box_1 = wx.RadioBox(self.panel, wx.ID_ANY, "", choices=self.classChoices, majorDimension=1, style=wx.RA_SPECIFY_COLS)
+		self.radio_box_1.SetFocus()
+		self.radio_box_1.SetSelection(0)
+		sizer_1.Add(self.choiceMessage,1, wx.ALIGN_CENTRE_HORIZONTAL)
+		sizer_1.Add(self.radio_box_1, 2, wx.EXPAND, 0)
+		#sizer_1.Add(0,0,1)
+		sizer_1.AddStretchSpacer(1)
+		sizer_2 = wx.BoxSizer(wx.HORIZONTAL)
+		sizer_1.Add(sizer_2, 1, wx.EXPAND, 0)
+		sizer_1.AddStretchSpacer(1)
+
+		sizer_2.AddStretchSpacer(3)
+
+		self.button_1 = wx.Button(self.panel, wx.ID_ANY, "PROCEED")
+		sizer_2.Add(self.button_1, 2, 0, 0)
+
+		sizer_2.AddStretchSpacer(1)
+
+		self.button_2 = wx.Button(self.panel, wx.ID_ANY, "CANCEL")
+		sizer_2.Add(self.button_2, 2, 0, 0)
+
+		sizer_2.AddStretchSpacer(3)
+		choiceFont = wx.Font(20,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL)
+		buttonFont = wx.Font(20,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_BOLD)
+		self.radio_box_1.SetFont(choiceFont)
+		self.button_1.SetFont(buttonFont)
+		self.button_2.SetFont(buttonFont)
+
+		#self.Bind(wx.EVT_SIZE,self.onResize)
+
+		self.panel.SetSizer(sizer_1)
+		sizer_1.Fit(self)
+		self.SetSize((600, len(self.classChoices)*50+30))
+
+		self.Layout()
+		self.alignToCenter(self)
+
+	def alignToCenter(self,window):
+	#set the window dead-center of the screen
+		dw, dh = wx.DisplaySize()
+		w, h = window.GetSize()
+		x = dw/2 - w/2
+		y = dh/2 - h/2
+		window.SetPosition((x,y))
+		#print dw, dh, w, h, x, y	
+		
+	def onExit(self,event):
+	#when the timer has ended (by user or countdown), stop the timer; destroy the frame; "stop" the thread using the stop function
+		#self.EndModal(0)
+		self.MakeModal(False)
+		self.Destroy()
+		self.idleTimer.Stop()
+		
 class MyApp(wx.App):
 	def OnInit(self):
 		self.bitmaps = {}
@@ -386,6 +485,5 @@ if __name__ == "__main__":
 	app = MyApp(0)
 	app.frame = MainWindow()
 	app.frame.Show()
-	#app.frame.socketWorker.sendEvent(["EVT_CLASSES",MACHINENAME,"False","False"])
 	#wx.lib.inspection.InspectionTool().Show()
 	app.MainLoop()

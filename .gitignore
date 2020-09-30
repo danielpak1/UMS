@@ -1,3 +1,4 @@
 logging/reports/
 3d-printer_script
 taskPID.txt
+*.pyc

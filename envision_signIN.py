@@ -77,8 +77,8 @@ class SocketThread(threading.Thread):
 
 class Student:
 	def __init__(self,parent,num):
-		spacer = 5*" "
-		initText = spacer+"LAST NAME, FIRST INITIAL PID: ****0000"+str(num)
+		#spacer = 5*" "
+		#initText = spacer+"LAST NAME, FIRST INITIAL PID: ****0000"+str(num)
 		fontSize = 15
 		studentFont = wx.Font(fontSize,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL)
 		parent = parent
@@ -87,11 +87,15 @@ class Student:
 		self.linePanel = wx.Panel(parent.panel_1, wx.ID_ANY)
 		self.rowSizer = wx.BoxSizer(wx.HORIZONTAL)
 		self.lineSizer = wx.BoxSizer(wx.HORIZONTAL)
-		self.nameCell = wx.StaticText(self.rowPanel, label=initText, style=wx.ALIGN_LEFT|wx.ST_NO_AUTORESIZE)
+		self.lnameCell = wx.StaticText(self.rowPanel, label=20*"-", style=wx.ALIGN_LEFT|wx.ST_NO_AUTORESIZE)
+		self.fnameCell = wx.StaticText(self.rowPanel, label=5*"-", style=wx.ALIGN_LEFT|wx.ST_NO_AUTORESIZE)
+		self.pidCell = wx.StaticText(self.rowPanel, label=10*"-", style=wx.ALIGN_LEFT|wx.ST_NO_AUTORESIZE)
 		self.cellLine = wx.StaticLine(self.linePanel, style=wx.LI_HORIZONTAL)
-		self.signedInButton = wx.StaticBitmap(self.rowPanel, wx.ID_ANY, app.bitmaps["green"], style = wx.NO_BORDER | wx.ALIGN_CENTRE)
-		self.signedOutButton = wx.StaticBitmap(self.rowPanel, wx.ID_ANY, app.bitmaps["red"], style = wx.NO_BORDER | wx.ALIGN_CENTRE)
-		self.nameCell.SetFont(studentFont)
+		self.signedInButton = wx.StaticBitmap(self.rowPanel, wx.ID_ANY, app.bitmaps["gray"], style = wx.NO_BORDER | wx.ALIGN_CENTRE)
+		self.signedOutButton = wx.StaticBitmap(self.rowPanel, wx.ID_ANY, app.bitmaps["gray"], style = wx.NO_BORDER | wx.ALIGN_CENTRE)
+		self.lnameCell.SetFont(studentFont)
+		self.fnameCell.SetFont(studentFont)
+		self.pidCell.SetFont(studentFont)
 		self.status = None
 
 class MainWindow(wx.Frame):
@@ -101,6 +105,7 @@ class MainWindow(wx.Frame):
 		self.classList = []
 		self.classHeaders = ["section_id","course","number","day","startTime","endTime"]
 		self.sectionOpen = False
+		self.currentSection = None
 
 		styleFlags = wx.DEFAULT_FRAME_STYLE # | wx.NO_BORDER# | wx.FRAME_NO_TASKBAR
 		if GTK:
@@ -122,6 +127,7 @@ class MainWindow(wx.Frame):
 		
 		#establish a listener thread. This allows the GUI to respond to spawned processes. In this case the socket process
 		pub.subscribe(self.socketListener, "socketListener")
+		pub.subscribe(self.sectionListener,"sectionListener")
 		#create a socket instance and start it
 		self.socketWorker = SocketThread(self,None)
 		self.socketWorker.start()
@@ -144,7 +150,10 @@ class MainWindow(wx.Frame):
 		
 		for row in self.rows:
 			self.mainSizer.Add(row.rowPanel,1,wx.EXPAND|wx.ALL,0)
-			row.rowSizer.Add(row.nameCell, 10, wx.ALIGN_CENTER_VERTICAL, 0)
+			row.rowSizer.Add(row.lnameCell, 3, wx.ALIGN_CENTER_VERTICAL, 0)
+			row.rowSizer.Add(row.fnameCell, 2, wx.ALIGN_CENTER_VERTICAL, 0)
+			row.rowSizer.Add(row.pidCell, 2, wx.ALIGN_CENTER_VERTICAL, 0)
+			row.rowSizer.AddStretchSpacer(2)
 			row.rowSizer.Add(row.signedInButton,1, wx.TOP | wx.BOTTOM, 0)#, wx.ALL | wx.EXPAND,0)
 			row.rowSizer.Add(row.signedOutButton,1, wx.TOP | wx.BOTTOM, 0)#, wx.ALL | wx.EXPAND,0)
 			row.rowPanel.SetSizer(row.rowSizer)
@@ -189,10 +198,7 @@ class MainWindow(wx.Frame):
 		print (winHeight, winWidth)
 		if (winWidth > 1 and winHeight > 1):
 			app.__set_bitmaps__(winWidth,winHeight)
-			for row in self.rows:
-				row.signedInButton.SetBitmap(app.bitmaps["green"])
-				row.signedOutButton.SetBitmap(app.bitmaps["red"])
-				row.rowSizer.Layout()
+			self.setStatus()
 		newSize.Skip()
 		self.mainSizer.Layout()
 		self.panel_1.Layout()
@@ -234,6 +240,20 @@ class MainWindow(wx.Frame):
 		else:
 			wx.MessageBox("Please Use The ID-Reader", "ERROR")
 		#event.Skip()
+
+	def setStatus(self):
+		for row in self.rows:
+			if row.status is None:
+				row.signedInButton.SetBitmap(app.bitmaps["gray"])
+				row.signedOutButton.SetBitmap(app.bitmaps["gray"])
+			elif row.status == False:
+				row.signedInButton.SetBitmap(app.bitmaps["green"])
+				row.signedOutButton.SetBitmap(app.bitmaps["red"])
+			elif row.status == "True":
+				row.signedInButton.SetBitmap(app.bitmaps["green"])
+				row.signedOutButton.SetBitmap(app.bitmaps["green"])
+			row.rowSizer.Layout()
+
 	def idEnter(self, idInput):
 		idList = list(idInput)
 		if idList[1] == '9':
@@ -270,6 +290,11 @@ class MainWindow(wx.Frame):
 		self.Layout()
 		self.socketWorker.sendEvent(["EVT_ROSTER",MACHINENAME,debugString,"False"])
 		
+	def sectionListener(self,selected):
+		self.choiceFrame.onExit(wx.EVT_CLOSE)
+		self.currentSection = self.classList[selected]["section_id"]
+		self.socketWorker.sendEvent(["EVT_OPENCLASS",MACHINENAME,"False",self.currentSection])
+	
 	#this function listens to the published messages from the socket process
 	def socketListener(self, sent=None, reply=None):
 	#function expects two lists of strings 
@@ -330,12 +355,14 @@ class MainWindow(wx.Frame):
 				self.classList[-1]={}
 				for i,detail in enumerate(sectionInfo):
 					self.classList[-1][self.classHeaders[i]]=detail
-		if command == "EVT_ROSTER":
+		elif command == "EVT_ROSTER":
 			if infoList[0] == "SUPERVISOR":
 				if self.sectionOpen:
 					self.closeSection()
 				else:
 					self.openSection()
+		elif command == "EVT_OPENCLASS":
+			self.setRoster(infoList)
 			#print self.classList
 
 	#this function is called if the socketListener determines that the packet was processed but not approved by the server
@@ -352,6 +379,30 @@ class MainWindow(wx.Frame):
 				errorMsg = "You have not completed the training for this machine!\n\nPlease log into the EnVision Portal to complete"
 			else:
 				errorMsg = error
+	
+	def setRoster(self,roster):
+		agreeDlg = wx.MessageDialog(self, "I certify that I will: \n- Enforce cleaning protocols; \n - Monitor social distancing and mask usage", "Open Class?", wx.YES_NO | wx.CENTRE | wx.ICON_QUESTION)
+		result = agreeDlg.ShowModal()
+		agreeDlg.Close()
+		agreeDlg.Destroy()
+		if result == wx.ID_YES:
+			for i,student in enumerate(roster):
+				if i>20:
+					break
+				else:
+					studentInfo = student.split(":")
+					#print studentInfo
+					self.rows[i].pidCell.SetLabel(studentInfo[0][0]+5*"*"+studentInfo[0][6:])
+					self.rows[i].lnameCell.SetLabel(studentInfo[1].split(",")[0])
+					firstName = studentInfo[1].split(",")[1].lstrip("_").rstrip("_").split("_")
+					nameString = ""
+					for names in firstName:
+						nameString += names[0]+"."
+					self.rows[i].fnameCell.SetLabel(nameString)
+					self.rows[i].rowSizer.Layout()
+		elif result == wx.ID_NO:
+			pass
+	
 	def openSection(self):
 		self.choiceFrame = choiceFrame(self,self.classList)
 		self.choiceFrame.Show()
@@ -374,6 +425,7 @@ class choiceFrame(wx.Frame):
 		print self.classChoices
 		self.radioText = 10*"." + "Choose Section" + 10*"."
 		self.__do_layout()
+		self.__set_properties()
 		self.MakeModal(True)
 
 	def __do_layout(self):
@@ -392,20 +444,20 @@ class choiceFrame(wx.Frame):
 
 		sizer_2.AddStretchSpacer(3)
 
-		self.button_1 = wx.Button(self.panel, wx.ID_ANY, "PROCEED")
-		sizer_2.Add(self.button_1, 2, 0, 0)
+		self.okButton = wx.Button(self.panel, wx.ID_ANY, "PROCEED")
+		sizer_2.Add(self.okButton, 2, 0, 0)
 
 		sizer_2.AddStretchSpacer(1)
 
-		self.button_2 = wx.Button(self.panel, wx.ID_ANY, "CANCEL")
-		sizer_2.Add(self.button_2, 2, 0, 0)
+		self.cancelButton = wx.Button(self.panel, wx.ID_ANY, "CANCEL")
+		sizer_2.Add(self.cancelButton, 2, 0, 0)
 
 		sizer_2.AddStretchSpacer(3)
 		choiceFont = wx.Font(20,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL)
 		buttonFont = wx.Font(20,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_BOLD)
 		self.radio_box_1.SetFont(choiceFont)
-		self.button_1.SetFont(buttonFont)
-		self.button_2.SetFont(buttonFont)
+		self.okButton.SetFont(buttonFont)
+		self.cancelButton.SetFont(buttonFont)
 
 		#self.Bind(wx.EVT_SIZE,self.onResize)
 
@@ -416,6 +468,10 @@ class choiceFrame(wx.Frame):
 		self.Layout()
 		self.alignToCenter(self)
 
+	def __set_properties(self):
+		self.okButton.Bind(wx.EVT_BUTTON, self.onOK)
+		self.cancelButton.Bind(wx.EVT_BUTTON, self.onExit)
+
 	def alignToCenter(self,window):
 	#set the window dead-center of the screen
 		dw, dh = wx.DisplaySize()
@@ -424,13 +480,20 @@ class choiceFrame(wx.Frame):
 		y = dh/2 - h/2
 		window.SetPosition((x,y))
 		#print dw, dh, w, h, x, y	
-		
+
+	def onOK(self,event):
+		#self.radio_box_1.GetString(self.radio_box_1.GetSelection())
+		#sectionChoice = self.radio_box_1.GetStringSelection()
+		sectionChoice = self.radio_box_1.GetSelection()
+		print sectionChoice
+		pub.sendMessage("sectionListener", selected=sectionChoice)
+		###maybe send index so I can use my classList / dict
 	def onExit(self,event):
 	#when the timer has ended (by user or countdown), stop the timer; destroy the frame; "stop" the thread using the stop function
 		#self.EndModal(0)
 		self.MakeModal(False)
 		self.Destroy()
-		self.idleTimer.Stop()
+		self.parent.focusPanel.SetFocus()
 		
 class MyApp(wx.App):
 	def OnInit(self):

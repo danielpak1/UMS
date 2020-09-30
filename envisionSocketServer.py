@@ -208,7 +208,18 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		returnInfo.append("OK")
 		returnInfo.append("|".join(classes))
 		return returnInfo
-	
+	def OpenClass(self,machine,section):
+		returnInfo = []
+		rosterResults = envisionSS.oecDB.getRoster(section)
+		classRoster = envisionSS.envisionDB.setRoster(machine,section,rosterResults)
+		if classRoster:
+			returnInfo.append("OK")
+			returnInfo.append("|".join(classRoster))
+		else:
+			returnInfo.append("DENY")
+			returnInfo.append("SECTIONERROR")
+		return returnInfo
+		
 	def ConnectMachine(self,machine):
 		returnInfo = []
 		if machine.split("_")[0] == "PRINTER":
@@ -615,7 +626,10 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 						section = info[0]
 						reply.extend(self.CheckRoster(user,section))
 					elif command == "EVT_CLASSES":
-						reply.extend(self.GetClasses())					
+						reply.extend(self.GetClasses())
+					elif command == "EVT_OPENCLASS":
+						section = info[0]
+						reply.extend(self.OpenClass(machine,section))
 					elif command =="EVT_CHECKID":
 						if info[0] == "TRUE":
 							if machine in clientDict and clientIP == clientDict[machine]:
@@ -927,10 +941,33 @@ class DatabaseHandler():
 					returnMsg.append(results[i][2])
 		logger.debug("Roster result: %s", returnMsg)
 		return returnMsg
-				
-			
-		
-		return returnMsg
+	
+	def setRoster(self,machine,section,rosterResults):
+		valuesString = ""
+		valueSep = '","'
+		classList = []
+		for student in rosterResults:
+			valuesString += ',("' + student[0] + valueSep + student[1] + valueSep + student[2] + valueSep + student[3] + valueSep + section + '")'
+			classList.append(":".join(student[:2]).rstrip(" "))
+		valuesString = valuesString[1:]
+		if machine.startswith("LECTURE"):
+			table = "roster_lecture"
+		else:
+			table = "roster_ms"
+		query = 'INSERT into ' + table + ' (pid,full_name,subject,course,section_id) VALUES ' + valuesString
+		results=self.executeQuery(query,False)
+		logger.info("Students added to EnVision roster-table: %s",table)
+		return(classList)
+	def getRoster(self,section):
+		query = 'SELECT pid, full_name, subject_code,course_code from envision_roster where section_id = "' +section+'" and enrollment_status = "EN";'
+		results=self.executeQuery(query)
+		if len(results) !=0:
+			logger.info("Student list returned %s students",str(len(results)))
+			return(results)
+		else:
+			logger.warning("Section %s doesn't exist",section)
+			return(False)
+	
 	#check that the user ID exists, and that the appropriate training has been completed
 	def checkID(self,machine,user):
 		userID = user.lstrip('0') #strip leading zeros from the userID passed from the client

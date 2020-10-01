@@ -349,12 +349,7 @@ class MainWindow(wx.Frame):
 		infoList = info.split("|") #split the info string into a list, delineated by | ... 
 		#extraneous info is often bundled together in one string to keep the reply packet uniform
 		if command == "EVT_CLASSES":
-			for section in infoList:
-				sectionInfo = section.split(",")
-				self.classList.append([])
-				self.classList[-1]={}
-				for i,detail in enumerate(sectionInfo):
-					self.classList[-1][self.classHeaders[i]]=detail
+			self.setClasses(infoList)
 		elif command == "EVT_ROSTER":
 			if infoList[0] == "SUPERVISOR":
 				if self.sectionOpen:
@@ -364,6 +359,8 @@ class MainWindow(wx.Frame):
 		elif command == "EVT_OPENCLASS":
 			self.setRoster(infoList)
 			#print self.classList
+		elif command == "EVT_RESTORE":
+			self.setRoster(infoList)
 
 	#this function is called if the socketListener determines that the packet was processed but not approved by the server
 	def processDeny(self,command, error):
@@ -379,7 +376,19 @@ class MainWindow(wx.Frame):
 				errorMsg = "You have not completed the training for this machine!\n\nPlease log into the EnVision Portal to complete"
 			else:
 				errorMsg = error
-	
+		elif command == "EVT_CLASSES":
+			#currentSection = errorList.pop()
+			self.setClasses(errorList)
+			self.socketWorker.sendEvent(["EVT_RESTORE",MACHINENAME,"False","False"])
+
+	def setClasses(self,infoList):
+		for section in infoList:
+			sectionInfo = section.split(",")
+			self.classList.append([])
+			self.classList[-1]={}
+			for i,detail in enumerate(sectionInfo):
+				self.classList[-1][self.classHeaders[i]]=detail
+
 	def setRoster(self,roster):
 		agreeDlg = wx.MessageDialog(self, "I certify that I will: \n- Enforce cleaning protocols; \n - Monitor social distancing and mask usage", "Open Class?", wx.YES_NO | wx.CENTRE | wx.ICON_QUESTION)
 		result = agreeDlg.ShowModal()
@@ -391,7 +400,6 @@ class MainWindow(wx.Frame):
 					break
 				else:
 					studentInfo = student.split(":")
-					#print studentInfo
 					self.rows[i].pidCell.SetLabel(studentInfo[0][0]+5*"*"+studentInfo[0][6:])
 					self.rows[i].lnameCell.SetLabel(studentInfo[1].split(",")[0])
 					firstName = studentInfo[1].split(",")[1].lstrip("_").rstrip("_").split("_")
@@ -403,6 +411,27 @@ class MainWindow(wx.Frame):
 		elif result == wx.ID_NO:
 			pass
 	
+	def restoreRoster(self,roster):
+		for i,student in enumerate(roster):
+			if i>20:
+				break
+			else:
+				studentInfo = student.split(":")
+				self.rows[i].pidCell.SetLabel(studentInfo[0][0]+5*"*"+studentInfo[0][6:])
+				self.rows[i].lnameCell.SetLabel(studentInfo[1].split(",")[0])
+				firstName = studentInfo[1].split(",")[1].lstrip("_").rstrip("_").split("_")
+				nameString = ""
+				for names in firstName:
+					nameString += names[0]+"."
+				self.rows[i].fnameCell.SetLabel(nameString)
+				if studentInfo[2] != "None":
+					self.rows[i].status = False
+				if studentInfo[3] != "None":
+					self.rows[i].status = True
+				self.rows[i].rowSizer.Layout()
+		self.setStatus()
+		self.mainSizer.Layout()
+		self.panel_1.Layout()
 	def openSection(self):
 		self.choiceFrame = choiceFrame(self,self.classList)
 		self.choiceFrame.Show()

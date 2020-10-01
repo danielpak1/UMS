@@ -202,10 +202,21 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			returnInfo.append("|".join("UNKNOWN",userInfo))	
 		return returnInfo
 	
-	def GetClasses(self):
+	def RestoreRoster(self,machine):
+		returnInfo = []
+		students = envisionSS.envisionDB.checkSession(machine)
+		if students:
+			returnInfo.append("OK")
+			returnInfo.append("|".join(students))
+		return returnInfo
+	def GetClasses(self,machine):
 		returnInfo = []
 		classes = envisionSS.envisionDB.getClasses()
-		returnInfo.append("OK")
+		students = envisionSS.envisionDB.checkSession(machine)
+		if students:
+			returnInfo.append("DENY")
+		else:
+			returnInfo.append("OK")
 		returnInfo.append("|".join(classes))
 		return returnInfo
 	def OpenClass(self,machine,section):
@@ -626,10 +637,12 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 						section = info[0]
 						reply.extend(self.CheckRoster(user,section))
 					elif command == "EVT_CLASSES":
-						reply.extend(self.GetClasses())
+						reply.extend(self.GetClasses(machine))
 					elif command == "EVT_OPENCLASS":
 						section = info[0]
 						reply.extend(self.OpenClass(machine,section))
+					elif command == "EVT_RESTORE":
+						reply.extend(self.RestoreRoster(machine))
 					elif command =="EVT_CHECKID":
 						if info[0] == "TRUE":
 							if machine in clientDict and clientIP == clientDict[machine]:
@@ -925,6 +938,23 @@ class DatabaseHandler():
 			thisCursor.close()
 			thisCnx.close()
 			return (result)#fetch all of the results 
+
+	def checkSession(self,machine):
+		if machine.startswith("LECTURE"):
+			table = "roster_lecture"
+		else:
+			table = "roster_ms"
+		query = "SELECT pid,full_name,signed_in,signed_out from " + table
+		results = self.executeQuery(query)
+		if len(results) == 0:
+			logger.info("No section in session")
+			return False
+		else:
+			logger.info("Section in session. Sending roster")
+			students=[]
+			for student in results:
+				students.append(':'.join(str(i).rstrip(" ") for i in student))
+			return students
 
 	def checkRoster(self,user):
 		#return values are exists, full_name, section_ID(s)

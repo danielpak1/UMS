@@ -55,6 +55,7 @@ class SocketThread(threading.Thread):
 			wx.GetApp().ProcessPendingEvents()
 		except Exception, msg:
 			#call this function if the connection was a failure
+			wx.CallAfter(self.parent.closeSocket)
 			wx.CallAfter(self.parent.socketClosed,wx.EVT_CLOSE,msg)
 		else:
 			if len(reply) == 3:
@@ -87,9 +88,12 @@ class Student:
 		self.linePanel = wx.Panel(parent.panel_1, wx.ID_ANY)
 		self.rowSizer = wx.BoxSizer(wx.HORIZONTAL)
 		self.lineSizer = wx.BoxSizer(wx.HORIZONTAL)
-		self.lnameCell = wx.StaticText(self.rowPanel, label=20*"-", style=wx.ALIGN_LEFT|wx.ST_NO_AUTORESIZE)
-		self.fnameCell = wx.StaticText(self.rowPanel, label=5*"-", style=wx.ALIGN_LEFT|wx.ST_NO_AUTORESIZE)
-		self.pidCell = wx.StaticText(self.rowPanel, label=10*"-", style=wx.ALIGN_LEFT|wx.ST_NO_AUTORESIZE)
+		self.lnameDefault = 20*"-"
+		self.fnameDefault = 5*"-"
+		self.pidCellDefault = 10*"-"
+		self.lnameCell = wx.StaticText(self.rowPanel, label=self.lnameDefault, style=wx.ALIGN_LEFT|wx.ST_NO_AUTORESIZE)
+		self.fnameCell = wx.StaticText(self.rowPanel, label=self.fnameDefault, style=wx.ALIGN_LEFT|wx.ST_NO_AUTORESIZE)
+		self.pidCell = wx.StaticText(self.rowPanel, label=self.pidCellDefault, style=wx.ALIGN_LEFT|wx.ST_NO_AUTORESIZE)
 		self.cellLine = wx.StaticLine(self.linePanel, style=wx.LI_HORIZONTAL)
 		self.signedInButton = wx.StaticBitmap(self.rowPanel, wx.ID_ANY, app.bitmaps["gray"], style = wx.NO_BORDER | wx.ALIGN_CENTRE)
 		self.signedOutButton = wx.StaticBitmap(self.rowPanel, wx.ID_ANY, app.bitmaps["gray"], style = wx.NO_BORDER | wx.ALIGN_CENTRE)
@@ -97,6 +101,7 @@ class Student:
 		self.fnameCell.SetFont(studentFont)
 		self.pidCell.SetFont(studentFont)
 		self.status = None
+		self.pid = None
 
 class MainWindow(wx.Frame):
 	def __init__(self):
@@ -104,8 +109,8 @@ class MainWindow(wx.Frame):
 		self.acceptString = False #will the panel accept keyboard input?
 		self.classList = []
 		self.classHeaders = ["section_id","course","number","day","startTime","endTime"]
-		self.sectionOpen = False
-		self.currentSection = None
+		self.currentSection = False
+		self.userIDnumber = None
 
 		styleFlags = wx.DEFAULT_FRAME_STYLE # | wx.NO_BORDER# | wx.FRAME_NO_TASKBAR
 		if GTK:
@@ -114,7 +119,7 @@ class MainWindow(wx.Frame):
 		
 		#Think I finally fixed the 'need focus' issue by creating a separate, empty panel 
 		#that has the main panel as a parent
-		#this seems to capture evt_char AND doesn't lose focus (yet)
+		#this seems to capture evt_char AND doesn't lose focus (yet)...it loses focus randomly. Somehow tied to the hidden text control spawning modal dialogs
 		self.panel_1 = wx.Panel(self, wx.ID_ANY, style=wx.BORDER_RAISED)
 		self.focusPanel = wx.Panel(self.panel_1, wx.ID_ANY, style=wx.WANTS_CHARS)
 		
@@ -184,7 +189,9 @@ class MainWindow(wx.Frame):
 			self.focusPanel.SetFocus()
 
 	def OnLoad(self):
+		self.Maximize(True)
 		self.socketWorker.sendEvent(["EVT_CLASSES",MACHINENAME,"False","False"])
+		
 
 	def OnExit(self,event):
 		#for thread in threading.enumerate():
@@ -198,7 +205,7 @@ class MainWindow(wx.Frame):
 		print (winHeight, winWidth)
 		if (winWidth > 1 and winHeight > 1):
 			app.__set_bitmaps__(winWidth,winHeight)
-			self.setStatus()
+			self.setAllStatus()
 		newSize.Skip()
 		self.mainSizer.Layout()
 		self.panel_1.Layout()
@@ -212,9 +219,10 @@ class MainWindow(wx.Frame):
 		"""
 		#pseudo buffer for inputList
 		keycode = event.GetKeyCode()
+		#print chr(keycode)
 		if keycode == 306:
 			return
-		if len(self.inputList) > 50 or keycode > 256 or keycode== wx.WXK_RETURN:
+		elif len(self.inputList) > 50 or keycode > 256 or keycode== wx.WXK_RETURN:
 			self.inputList=[]
 			wx.MessageBox("Please Use The ID-Reader", "ERROR")
 			return
@@ -225,23 +233,58 @@ class MainWindow(wx.Frame):
 		elif keycode == ASCII_START:
 			#if present, start accepting characters into the inputList
 			self.acceptString = True
+			#print "accepting"
 		if self.acceptString:
 			self.inputList.append(keycode)
+			#print [chr(i) for i in self.inputList], self.inputList
+			#print len(self.inputList)
 			if len(self.inputList) == READER_LENGTH:
 				if self.inputList[-1] == ASCII_END:
 					#join the character together in a string
 					inputString = ''.join(chr(i) for i in self.inputList[3:13])
 					#print inputString
 					self.idEnter(inputString)
-				#reset the capture variables
-				self.acceptString = False
-				self.inputList = []
+					#reset the capture variables
+					self.acceptString = False
+					self.inputList = []
 		#ignore all strings that don't start with '$'
 		else:
-			wx.MessageBox("Please Use The ID-Reader", "ERROR")
+			wx.MessageBox("Please Use The ID-Reader!", "ERROR")
 		#event.Skip()
 
+	def idEnter(self, idInput):
+		idList = list(idInput)
+		if idList[1] == '9':
+		#magstripe reads a '09' for students, replace this with a 'A' per UCSD standards
+			idList[1]='A'
+		if idList[1] == '7':
+		#magstripe reads '07' for international students, replace with something
+			idList[1]='U'
+			idList[2]='0'
+		self.userIDnumber = ''.join(i for i in idList[1:])
+		#print self.userIDnumber
+		#check the ID record on the server, info slot is True/False depending on whether I want these machines in etc/hosts
+		self.socketWorker.sendEvent(["EVT_ROSTER",MACHINENAME,self.userIDnumber,str(self.currentSection)]) 
+
+
 	def setStatus(self):
+		for student in self.rows:
+			#print student.pid, self.userIDnumber
+			if student.pid == self.userIDnumber:
+				print student.status
+				if student.status is None:
+					student.signedInButton.SetBitmap(app.bitmaps["green"])
+					student.signedOutButton.SetBitmap(app.bitmaps["red"])
+					student.status = False
+				elif student.status == False:
+					student.signedInButton.SetBitmap(app.bitmaps["green"])
+					student.signedOutButton.SetBitmap(app.bitmaps["green"])
+					student.status = True
+				student.rowSizer.Layout()
+				break
+		#self.mainSizer.Layout()
+
+	def setAllStatus(self):
 		for row in self.rows:
 			if row.status is None:
 				row.signedInButton.SetBitmap(app.bitmaps["gray"])
@@ -254,20 +297,7 @@ class MainWindow(wx.Frame):
 				row.signedOutButton.SetBitmap(app.bitmaps["green"])
 			row.rowSizer.Layout()
 
-	def idEnter(self, idInput):
-		idList = list(idInput)
-		if idList[1] == '9':
-		#magstripe reads a '09' for students, replace this with a 'A' per UCSD standards
-			idList[1]='A'
-		if idList[1] == '7':
-		#magstripe reads '07' for international students, replace with something
-			idList[1]='U'
-			idList[2]='0'
-		idString = ''.join(i for i in idList[1:])
-		print idString
-		#self.userIDnumber = idList #set the current user to this ID string
-		#check the ID record on the server, info slot is True/False depending on whether I want these machines in etc/hosts
-		self.socketWorker.sendEvent(["EVT_ROSTER",MACHINENAME,idString,"False"]) 
+
 
 	def debugTextControl(self):
 		self.focusPanel.Unbind(wx.EVT_CHAR)
@@ -280,20 +310,32 @@ class MainWindow(wx.Frame):
 	def processTextBox(self,event):
 		debugString=self.hiddenTC.GetLineText(0)
 		self.hiddenTC.Clear()
-		#print debugString
 		self.hiddenTC.Hide()
-		self.mainSizer.Layout()
+		#print debugString
 		self.hiddenTC.Unbind(wx.EVT_TEXT_ENTER)
 		self.focusPanel.Bind(wx.EVT_CHAR,self.onKeyPress)
-		self.focusPanel.SetFocus()
 		self.focusPanel.Bind(wx.EVT_KILL_FOCUS, self.onFocusLost)
+		self.focusPanel.SetFocus()
+		#wx.CallAfter(self.hiddenTC.Hide)
+		#wx.GetApp().ProcessPendingEvents()
+		self.mainSizer.Layout()
 		self.Layout()
-		self.socketWorker.sendEvent(["EVT_ROSTER",MACHINENAME,debugString,"False"])
+		self.userIDnumber=debugString
+		self.socketWorker.sendEvent(["EVT_ROSTER",MACHINENAME,self.userIDnumber,str(self.currentSection)])
 		
 	def sectionListener(self,selected):
 		self.choiceFrame.onExit(wx.EVT_CLOSE)
-		self.currentSection = self.classList[selected]["section_id"]
-		self.socketWorker.sendEvent(["EVT_OPENCLASS",MACHINENAME,"False",self.currentSection])
+		agreeDlg = wx.MessageDialog(self, "I certify that I will: \n- Enforce cleaning protocols; \n- Monitor social distancing and mask usage", "Open Class?", wx.YES_NO | wx.CENTRE | wx.ICON_QUESTION)
+		result = agreeDlg.ShowModal()
+		#agreeDlg.Close()
+		#agreeDlg.Destroy()
+		if result == wx.ID_YES:
+			#self.focusPanel.SetFocus()
+			self.currentSection = self.classList[selected]["section_id"]
+			self.socketWorker.sendEvent(["EVT_OPENCLASS",MACHINENAME,"False",self.currentSection])
+		elif result == wx.ID_NO:
+			pass
+			#self.focusPanel.SetFocus()
 	
 	#this function listens to the published messages from the socket process
 	def socketListener(self, sent=None, reply=None):
@@ -330,19 +372,18 @@ class MainWindow(wx.Frame):
 		except Exception as e:
 			print e
 	def closeSocket(self):
-		try:
-			del self.busyMsg
-		except Exception as e:
-			print e
-			print "busy message didn't exist"			
+		self.busyMsg = None
+
 	def socketClosed(self, event, errorMsg):
 		self.Show()
 		self.Raise()
 		errorMsg = str(errorMsg)
 		errorDlg = wx.MessageDialog(self, "Connection to SERVER failed!\n\n"+errorMsg+"\n\nPlease see an Administrator", "ERROR", wx.OK | wx.ICON_ERROR | wx.CENTER)
 		result = errorDlg.ShowModal()
+		#errorDlg.Close()
+		#errorDlg.Destroy()
 		if result == wx.ID_OK:
-			errorDlg.Destroy()
+			pass
 	#called after the socketlistener determines the packets were properly formed, and were accepted by the server
 	def processReply(self, command, info):
 		#function expects two strings: the command and the information returned by the server
@@ -352,34 +393,29 @@ class MainWindow(wx.Frame):
 			self.setClasses(infoList)
 		elif command == "EVT_ROSTER":
 			if infoList[0] == "SUPERVISOR":
-				if self.sectionOpen:
-					self.closeSection()
-				else:
-					self.openSection()
+				self.openSection()
+			else:
+				self.setStatus()
 		elif command == "EVT_OPENCLASS":
 			self.setRoster(infoList)
 			#print self.classList
 		elif command == "EVT_RESTORE":
-			self.setRoster(infoList)
+			self.restoreRoster(infoList)
+		elif command == "EVT_CLOSECLASS":
+			self.resetRoster()
+			self.currentSection = False
 
 	#this function is called if the socketListener determines that the packet was processed but not approved by the server
 	def processDeny(self,command, error):
 		#functions expects two lists, one command and containing any relevant error messages
 		errorList = error.split("|")
-		if command == "EVT_CHECKID":
-		#if check id fails, explain why
-			if errorList[0] == "WAIVER":
-				errorMsg = 'Your Responsbility Contract has expired! (>90 days)\n\nPlease log into the EnVision Portal to complete'
-			elif errorList[0] == "GRAD":
-				errorMsg = "Engineering Graduate Use is Restricted \n\n Please see an admin for other options on campus"
-			elif errorList[0] == "CERT":
-				errorMsg = "You have not completed the training for this machine!\n\nPlease log into the EnVision Portal to complete"
-			else:
-				errorMsg = error
+		if command == "EVT_ROSTER":
+			if errorList[0] == "SUPERVISOR":
+				self.closeSection()
 		elif command == "EVT_CLASSES":
-			#currentSection = errorList.pop()
+			self.currentSection = errorList.pop()
 			self.setClasses(errorList)
-			self.socketWorker.sendEvent(["EVT_RESTORE",MACHINENAME,"False","False"])
+			self.socketWorker.sendEvent(["EVT_RESTORE",MACHINENAME,"False",self.currentSection])
 
 	def setClasses(self,infoList):
 		for section in infoList:
@@ -390,54 +426,85 @@ class MainWindow(wx.Frame):
 				self.classList[-1][self.classHeaders[i]]=detail
 
 	def setRoster(self,roster):
-		agreeDlg = wx.MessageDialog(self, "I certify that I will: \n- Enforce cleaning protocols; \n - Monitor social distancing and mask usage", "Open Class?", wx.YES_NO | wx.CENTRE | wx.ICON_QUESTION)
-		result = agreeDlg.ShowModal()
-		agreeDlg.Close()
-		agreeDlg.Destroy()
-		if result == wx.ID_YES:
-			for i,student in enumerate(roster):
-				if i>20:
-					break
-				else:
-					studentInfo = student.split(":")
-					self.rows[i].pidCell.SetLabel(studentInfo[0][0]+5*"*"+studentInfo[0][6:])
-					self.rows[i].lnameCell.SetLabel(studentInfo[1].split(",")[0])
-					firstName = studentInfo[1].split(",")[1].lstrip("_").rstrip("_").split("_")
-					nameString = ""
-					for names in firstName:
-						nameString += names[0]+"."
-					self.rows[i].fnameCell.SetLabel(nameString)
-					self.rows[i].rowSizer.Layout()
-		elif result == wx.ID_NO:
-			pass
-	
-	def restoreRoster(self,roster):
 		for i,student in enumerate(roster):
 			if i>20:
 				break
 			else:
 				studentInfo = student.split(":")
 				self.rows[i].pidCell.SetLabel(studentInfo[0][0]+5*"*"+studentInfo[0][6:])
+				self.rows[i].pid = studentInfo[0]
 				self.rows[i].lnameCell.SetLabel(studentInfo[1].split(",")[0])
 				firstName = studentInfo[1].split(",")[1].lstrip("_").rstrip("_").split("_")
 				nameString = ""
 				for names in firstName:
 					nameString += names[0]+"."
 				self.rows[i].fnameCell.SetLabel(nameString)
-				if studentInfo[2] != "None":
+				self.rows[i].rowSizer.Layout()
+	def restoreRoster(self,roster):
+		
+		for i,student in enumerate(roster):
+			if i>20:
+				break
+			else:
+				studentInfo = student.split(":")
+				self.rows[i].pidCell.SetLabel(studentInfo[0][0]+5*"*"+studentInfo[0][6:])
+				self.rows[i].pid = studentInfo[0]
+				self.rows[i].lnameCell.SetLabel(studentInfo[1].split(",")[0])
+				firstName = studentInfo[1].split(",")[1].lstrip("_").rstrip("_").split("_")
+				nameString = ""
+				for names in firstName:
+					nameString += names[0]+"."
+				self.rows[i].fnameCell.SetLabel(nameString)
+				#print studentInfo[2], studentInfo[3]
+				if studentInfo[2] != "NONE":
 					self.rows[i].status = False
-				if studentInfo[3] != "None":
+				if studentInfo[3] != "NONE":
 					self.rows[i].status = True
 				self.rows[i].rowSizer.Layout()
-		self.setStatus()
+		self.setAllStatus()
+		self.mainSizer.Layout()
+		self.panel_1.Layout()
+	def resetRoster(self):
+		for student in self.rows:
+			student.pidCell.SetLabel(student.pidCellDefault)
+			student.lnameCell.SetLabel(student.lnameDefault)
+			student.fnameCell.SetLabel(student.fnameDefault)
+			student.status = None
+			student.pid = None
+		self.setAllStatus()
 		self.mainSizer.Layout()
 		self.panel_1.Layout()
 	def openSection(self):
 		self.choiceFrame = choiceFrame(self,self.classList)
 		self.choiceFrame.Show()
 	def closeSection(self):
-		pass
-
+		missingStudents = []
+		for student in self.rows:
+			if student.status == False:
+				missingStudents.append(", ".join([student.lnameCell.GetLabel(),student.fnameCell.GetLabel()]))
+		if missingStudents:
+			msg = "There are " + str(len(missingStudents)) + " students that have not signed out: \n- " + '\n- '.join(i for i in missingStudents)
+			agreeDlg = wx.MessageDialog(self, msg , "Proceed?", wx.YES_NO | wx.CENTRE | wx.ICON_QUESTION)
+			result = agreeDlg.ShowModal()
+			#agreeDlg.Close()
+			#agreeDlg.Destroy()
+			if result == wx.ID_YES:
+				closeSectionMSG = True
+			elif result == wx.ID_NO:
+				closeSectionMSG = False
+		else:
+				closeSectionMSG = True
+		if closeSectionMSG:
+			msg = "I certify that: \n\n- All equipment and furniture has been cleaned; \n- All students have cleared the room" 
+			agreeDlg = wx.MessageDialog(self, msg , "Proceed?", wx.YES_NO | wx.CENTRE | wx.ICON_QUESTION)
+			result = agreeDlg.ShowModal()
+			#agreeDlg.Close()
+			#agreeDlg.Destroy()
+			if result == wx.ID_YES:
+				self.socketWorker.sendEvent(["EVT_CLOSECLASS",MACHINENAME,self.userIDnumber,self.currentSection])
+			if result == wx.ID_NO:
+				pass
+		
 class choiceFrame(wx.Frame):
 	def __init__(self,parent,classList):
 		"""Constructor"""

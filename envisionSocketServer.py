@@ -107,36 +107,38 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		else:
 			logger.debug("%s not found in availableMachines",machine)
 			return False
-	def CheckRoster(self,user,currentSection):
+	def CheckRoster(self,user,machine,currentSection):
 		returnInfo = []
-		rosterInfo = envisionSS.oecDB.checkRoster(user)
-		#return values are exists, full_name, section_ID
 		userInfo = envisionSS.oecDB.checkID("ROSTER",user)
-		#return value is Waiver, Certification, Admin, Supervisor, Major, Class_level, Suspended
-		enrolled = rosterInfo[0]
-		full_name = rosterInfo[1]
-		dbSection = rosterInfo[2]
 		admin = userInfo[2]
 		supervisor = userInfo[3]
 		#check admin and supervisor status first
+		#print currentSection
 		if admin == "True" or supervisor == "True":
 			logger.info("Roster Admin / Supervisor")
-			returnInfo.append("OK")
-			returnInfo.append("SUPERVISOR")
-			return returnInfo
-		if enrolled != "False":
-			if currentSection == dbSection:
-				logger.info("Section ID match")
+			if currentSection == "FALSE":
 				returnInfo.append("OK")
-				returnInfo.append("CLEARED")
+				returnInfo.append("SUPERVISOR")
 			else:
-				logger.info("Section IDs Mismatch: %s, %s",currentSection, dbSection)
 				returnInfo.append("DENY")
-				returnInfo.append("WRONGSECTION")
-		else:
-			logger.info("Student Not Enrolled")
-			returnInfo.append("DENY")
-			returnInfo.append("NOTENROLLED")
+				returnInfo.append("SUPERVISOR")
+		else: 
+			if currentSection == "FALSE":
+				returnInfo.append("DENY")
+				returnInfo.append("CLOSED")
+			else:
+				studentInfo = envisionSS.envisionDB.checkRoster(user,machine)
+				if studentInfo:
+					if studentInfo[0][0] is None:
+						returnInfo.append("OK")
+						returnInfo.append("SIGNIN")
+					else:
+						returnInfo.append("OK")
+						returnInfo.append("SIGNOUT")
+				else:
+						logger.info("Student Not Enrolled")
+						returnInfo.append("DENY")
+						returnInfo.append("NOTENROLLED")
 		return returnInfo
 	def CheckID(self,machine,user):
 	#check if the ID is in the OEC DB, and return detailed info about the user
@@ -212,9 +214,10 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 	def GetClasses(self,machine):
 		returnInfo = []
 		classes = envisionSS.envisionDB.getClasses()
-		students = envisionSS.envisionDB.checkSession(machine)
-		if students:
+		sectionID = envisionSS.envisionDB.checkSession(machine, needSectionID=True)
+		if sectionID:
 			returnInfo.append("DENY")
+			classes.append(sectionID)
 		else:
 			returnInfo.append("OK")
 		returnInfo.append("|".join(classes))
@@ -230,7 +233,16 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			returnInfo.append("DENY")
 			returnInfo.append("SECTIONERROR")
 		return returnInfo
-		
+
+	def CloseClass(self,user,machine,section):
+		closed = envisionSS.envisionDB.closeClass(machine)
+		if closed:
+			returnInfo.append("OK")
+			returnInfo.append("CLOSED")
+		else:
+			returnInfo.append("DENY")
+			returnInfo.append("ERROR")
+
 	def ConnectMachine(self,machine):
 		returnInfo = []
 		if machine.split("_")[0] == "PRINTER":
@@ -635,7 +647,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 				else:
 					if command == "EVT_ROSTER":
 						section = info[0]
-						reply.extend(self.CheckRoster(user,section))
+						reply.extend(self.CheckRoster(user,machine,section))
 					elif command == "EVT_CLASSES":
 						reply.extend(self.GetClasses(machine))
 					elif command == "EVT_OPENCLASS":
@@ -650,6 +662,10 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 							else:
 								self.updateClientDict(machine,clientIP)
 						reply.extend(self.CheckID(machine, user))
+					elif command == "EVT_CLOSECLASS":
+						section = info[0]
+						reply.extend(self.CloseClass(user,machine,section)
+					
 					elif command == "EVT_CONNECT":
 					#Event called when a machine first starts and connects to the socket
 						if loggedMachine:
@@ -933,44 +949,53 @@ class DatabaseHandler():
 					result = thisCursor.fetchall()
 					result = str(result[0][0])
 				else:
-					result = None
+					result = str(thisCursor.rowcount)
 			thisCnx.commit()
 			thisCursor.close()
 			thisCnx.close()
 			return (result)#fetch all of the results 
 
-	def checkSession(self,machine):
+	def closeClass(self,machine):
 		if machine.startswith("LECTURE"):
 			table = "roster_lecture"
 		else:
 			table = "roster_ms"
-		query = "SELECT pid,full_name,signed_in,signed_out from " + table
+		query = "DELETE from " + table
+		results = self.executeQuery(query)
+		
+	def checkSession(self,machine, needSectionID=False):
+		if machine.startswith("LECTURE"):
+			table = "roster_lecture"
+		else:
+			table = "roster_ms"
+		if needSectionID:
+			info = "section_id"
+		else:
+			info = "pid,full_name,signed_in,signed_out"
+		query = "SELECT " + info +" from " + table
 		results = self.executeQuery(query)
 		if len(results) == 0:
 			logger.info("No section in session")
 			return False
 		else:
-			logger.info("Section in session. Sending roster")
+			logger.info("Section in session")
 			students=[]
-			for student in results:
-				students.append(':'.join(str(i).rstrip(" ") for i in student))
-			return students
+			if needSectionID:
+				return str(results[0][0])
+			else:
+				for student in results:
+					students.append(':'.join(str(i).rstrip(" ") for i in student))
+				return students
 
-	def checkRoster(self,user):
-		#return values are exists, full_name, section_ID(s)
-		returnMsg = ["False","False","False"]
+	def checkRoster(self,user,machine):
+		if machine.startswith("LECTURE"):
+			table = "roster_lecture"
+		else:
+			table = "roster_ms"
 		userID = user.lstrip('0')
-		query = 'SELECT enrollment_status,full_name,section_id from envision_roster where pid ="'+userID+'";'
+		query = 'SELECT signed_in,signed_out from ' + table + ' where pid="' +userID+ '";'
 		results = self.executeQuery(query)
-		if len(results) != 0:
-			logger.info("Multiple sections found")
-			for i,result in enumerate(results[0]):
-				returnMsg[i]=result
-			if len(results) > 1:
-				for i in xrange(1,len(results)):
-					returnMsg.append(results[i][2])
-		logger.debug("Roster result: %s", returnMsg)
-		return returnMsg
+		return results
 	
 	def setRoster(self,machine,section,rosterResults):
 		valuesString = ""

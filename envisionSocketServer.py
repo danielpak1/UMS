@@ -222,11 +222,18 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 			returnInfo.append("OK")
 		returnInfo.append("|".join(classes))
 		return returnInfo
-	def OpenClass(self,machine,section):
+	def OpenClass(self,machine,user,section):
 		returnInfo = []
 		rosterResults = envisionSS.oecDB.getRoster(section)
 		classRoster = envisionSS.envisionDB.setRoster(machine,section,rosterResults)
 		if classRoster:
+			logID=envisionSS.envisionDB.logClassStart(machine,user,section)
+			if machine.startswith("LECTURE"):
+				envisionSS.envisionDB.updateMachine("LECTURE_ROSTER-IN","logID",logID)
+				envisionSS.envisionDB.updateMachine("LECTURE_ROSTER-OUT","logID",logID)
+			else:
+				envisionSS.envisionDB.updateMachine("MS_ROSTER-IN","logID",logID)
+				envisionSS.envisionDB.updateMachine("MS_ROSTER-OUT","logID",logID)
 			returnInfo.append("OK")
 			returnInfo.append("|".join(classRoster))
 		else:
@@ -235,13 +242,23 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		return returnInfo
 
 	def CloseClass(self,user,machine,section):
+		returnInfo = []
 		closed = envisionSS.envisionDB.closeClass(machine)
 		if closed:
+			logger.info("Closed Section: %s; Removed %s students",section,closed)
+			if machine.startswith("LECTURE"):
+				envisionSS.envisionDB.logEnd("LECTURE_ROSTER-IN")
+				envisionSS.envisionDB.logEnd("LECTURE_ROSTER-OUT")
+			else:
+				envisionSS.envisionDB.logEnd("MS_ROSTER-IN")
+				envisionSS.envisionDB.logEnd("MS_ROSTER-IN")
 			returnInfo.append("OK")
 			returnInfo.append("CLOSED")
 		else:
+			logger.error("Unable to reset roster for %s,Section: %s",machine,section)
 			returnInfo.append("DENY")
 			returnInfo.append("ERROR")
+		return returnInfo
 
 	def ConnectMachine(self,machine):
 		returnInfo = []
@@ -664,7 +681,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 						reply.extend(self.CheckID(machine, user))
 					elif command == "EVT_CLOSECLASS":
 						section = info[0]
-						reply.extend(self.CloseClass(user,machine,section)
+						reply.extend(self.CloseClass(user,machine,section))
 					
 					elif command == "EVT_CONNECT":
 					#Event called when a machine first starts and connects to the socket
@@ -961,7 +978,11 @@ class DatabaseHandler():
 		else:
 			table = "roster_ms"
 		query = "DELETE from " + table
-		results = self.executeQuery(query)
+		results = self.executeQuery(query,False)
+		if results:
+			return results
+		else:
+			return False
 		
 	def checkSession(self,machine, needSectionID=False):
 		if machine.startswith("LECTURE"):
@@ -1011,7 +1032,7 @@ class DatabaseHandler():
 			table = "roster_ms"
 		query = 'INSERT into ' + table + ' (pid,full_name,subject,course,section_id) VALUES ' + valuesString
 		results=self.executeQuery(query,False)
-		logger.info("Students added to EnVision roster-table: %s",table)
+		logger.info("%s Students added to EnVision roster-table: %s",results,table)
 		return(classList)
 	def getRoster(self,section):
 		query = 'SELECT pid, full_name, subject_code,course_code from envision_roster where section_id = "' +section+'" and enrollment_status = "EN";'
@@ -1073,6 +1094,20 @@ class DatabaseHandler():
 						returnMsg[6]=result[6]
 				break	
 		return returnMsg
+	
+	def logClassStart(self,machine,user,section):
+		if machine.startswith("LECTURE"):
+			table = "roster_lecture"
+		else:
+			table = "roster_ms"
+		startTime = datetime.datetime.now().strftime('%Y%m%d-%H:%M')
+		query = 'SELECT subject,course from roster_sections where sectionID = "' + section + '"'
+		course = "".join(self.executeQuery(query)[0])
+		sectionInfo = '","'.join([user, course, section, machine, startTime])
+		query = 'INSERT into ' + table + ' (user,major,level,machine,startTime) VALUES (' + userInfo + ')'
+		logID=self.executeQuery(query,False,True)
+		logger.info("%s OPENED on %s WITH LOGID %s ",section,machine,logID) #debug info
+		return logID
 	#create a log entry for the user and machine
 	def logStart(self, user, machine, major, level):
 		startTime = datetime.datetime.now().strftime('%Y%m%d-%H:%M')
@@ -1386,11 +1421,25 @@ class EnvisionServer():
 		#seperate variables for each database. This isn't necessary but makes it explicit which DB operation is being performed
 		self.oecDB = DatabaseHandler(self,"oec") #OECs DB
 		self.envisionDB = DatabaseHandler(self,"envision")#EnVision DB related to machines, classes, and users
-		self.ps1 = SmartPowerStrip('192.168.111.11') #PowerStrip-1 TAZ4's and TAZ5
-		self.ps2 = SmartPowerStrip('192.168.111.12') #PowerStrip-2 TAZ6's
-		self.ps3 = SmartPowerStrip('192.168.111.13') #PowerStrip-3 TAZ_MINI 1-6
-		self.ps4 = SmartPowerStrip('192.168.111.14') #PowerStrip-4 TAZ_MINI 7-8
-		
+		for attempt in xrange(5):
+			try:
+				if self.ps1 not in locals():
+					self.ps1 = SmartPowerStrip('192.168.111.11') #PowerStrip-1 TAZ4's and TAZ5
+				if self.ps2 not in locals():
+					self.ps2 = SmartPowerStrip('192.168.111.12') #PowerStrip-2 TAZ6's
+				if self.ps3 not in locals():
+					self.ps3 = SmartPowerStrip('192.168.111.13') #PowerStrip-3 TAZ_MINI 1-6
+				if self.ps4 not in locals():
+					self.ps4 = SmartPowerStrip('192.168.111.14') #PowerStrip-4 TAZ_MINI 7-8
+			except Exception as e:
+				logger.error("KASA Error: %s", e)
+				logger.warning("KASA-STRIP timeout attempt %s, retrying",attempt)
+			else:
+				break
+		except:
+			logger.critical("KASA-STRIPS not connecting. SERVER NOT STARTED!")
+				
+			
 
 def closeUp(msg,event):
 #function to close the socket and terminate all active threads

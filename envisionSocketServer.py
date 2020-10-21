@@ -112,6 +112,8 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		userInfo = envisionSS.oecDB.checkID("ROSTER",user)
 		admin = userInfo[2]
 		supervisor = userInfo[3]
+		major = userInfo[4]
+		level = userInfo[5]
 		#check admin and supervisor status first
 		#print currentSection
 		if admin == "True" or supervisor == "True":
@@ -130,9 +132,13 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 				studentInfo = envisionSS.envisionDB.checkRoster(user,machine)
 				if studentInfo:
 					if studentInfo[0][0] is None:
+						logID = envisionSS.envisionDB.logClassStart(machine,user,currentSection)
+						envisionSS.envisionDB.updateRoster(user,machine, logID, "in")
 						returnInfo.append("OK")
 						returnInfo.append("SIGNIN")
 					else:
+						logID=envisionSS.envisionDB.logClassEnd(user,machine)
+						envisionSS.envisionDB.updateRoster(user,machine,logID,"out")
 						returnInfo.append("OK")
 						returnInfo.append("SIGNOUT")
 				else:
@@ -246,12 +252,13 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 		closed = envisionSS.envisionDB.closeClass(machine)
 		if closed:
 			logger.info("Closed Section: %s; Removed %s students",section,closed)
+			envisionSS.envisionDB.logEnd(machine)
 			if machine.startswith("LECTURE"):
-				envisionSS.envisionDB.logEnd("LECTURE_ROSTER-IN")
-				envisionSS.envisionDB.logEnd("LECTURE_ROSTER-OUT")
+				envisionSS.envisionDB.release("LECTURE_ROSTER-IN")
+				envisionSS.envisionDB.release("LECTURE_ROSTER-OUT")
 			else:
-				envisionSS.envisionDB.logEnd("MS_ROSTER-IN")
-				envisionSS.envisionDB.logEnd("MS_ROSTER-IN")
+				envisionSS.envisionDB.release("MS_ROSTER-IN")
+				envisionSS.envisionDB.release("MS_ROSTER-OUT")
 			returnInfo.append("OK")
 			returnInfo.append("CLOSED")
 		else:
@@ -669,7 +676,7 @@ class MyTCPHandler(SocketServer.BaseRequestHandler):
 						reply.extend(self.GetClasses(machine))
 					elif command == "EVT_OPENCLASS":
 						section = info[0]
-						reply.extend(self.OpenClass(machine,section))
+						reply.extend(self.OpenClass(machine,user,section))
 					elif command == "EVT_RESTORE":
 						reply.extend(self.RestoreRoster(machine))
 					elif command =="EVT_CHECKID":
@@ -848,7 +855,6 @@ class TimerThread(threading.Thread):
 		self.runFlag = False
 	def stop(self):
 	#stop is a function to turn the relay off after the timer has expired
-	#This create a new db connection. It's not ideal but I'm being lazy
 		#success = self.sshRelay(relayOff) #open an SSH tunnel to the relay machine, and send the off signal
 		success = self.kasaRelay(relayOff)
 		logger.debug('%s',success)
@@ -1005,9 +1011,18 @@ class DatabaseHandler():
 				return str(results[0][0])
 			else:
 				for student in results:
-					students.append(':'.join(str(i).rstrip(" ") for i in student))
+					students.append('~'.join(str(i).rstrip(" ") for i in student))
 				return students
 
+	def updateRoster(self,user,machine,logID,field):
+		if machine.startswith("LECTURE"):
+			table = "roster_lecture"
+		else:
+			table = "roster_ms"
+		#timeStamp = datetime.datetime.now().strftime('%Y%m%d-%H:%M')
+		query = 'UPDATE ' + table + ' set signed_' + field + ' ="' + logID + '" where pid="' +user+ '";'
+		logger.info("%s",query)
+		results = self.executeQuery(query,False)
 	def checkRoster(self,user,machine):
 		if machine.startswith("LECTURE"):
 			table = "roster_lecture"
@@ -1024,7 +1039,7 @@ class DatabaseHandler():
 		classList = []
 		for student in rosterResults:
 			valuesString += ',("' + student[0] + valueSep + student[1] + valueSep + student[2] + valueSep + student[3] + valueSep + section + '")'
-			classList.append(":".join(student[:2]).rstrip(" "))
+			classList.append("~".join(student[:2]).rstrip(" "))
 		valuesString = valuesString[1:]
 		if machine.startswith("LECTURE"):
 			table = "roster_lecture"
@@ -1096,24 +1111,32 @@ class DatabaseHandler():
 		return returnMsg
 	
 	def logClassStart(self,machine,user,section):
-		if machine.startswith("LECTURE"):
-			table = "roster_lecture"
-		else:
-			table = "roster_ms"
 		startTime = datetime.datetime.now().strftime('%Y%m%d-%H:%M')
 		query = 'SELECT subject,course from roster_sections where sectionID = "' + section + '"'
 		course = "".join(self.executeQuery(query)[0])
 		sectionInfo = '","'.join([user, course, section, machine, startTime])
-		query = 'INSERT into ' + table + ' (user,major,level,machine,startTime) VALUES (' + userInfo + ')'
+		sectionInfo = '"'+sectionInfo+'"'
+		query = 'INSERT into attendance_log (user,course,section,machine,startTime) VALUES (' + sectionInfo + ')'
 		logID=self.executeQuery(query,False,True)
 		logger.info("%s OPENED on %s WITH LOGID %s ",section,machine,logID) #debug info
 		return logID
 	#create a log entry for the user and machine
+	def logClassEnd(self,user,machine):
+		endTime = (datetime.datetime.now()).strftime('%Y%m%d-%H:%M')
+		table = "roster_lecture" if machine.startswith("LECTURE") else "roster_ms"
+		query = 'SELECT signed_in from ' + table + ' WHERE pid = "' +user+'"'
+		result = self.executeQuery(query)
+		logID = str(result[0][0])
+		query = 'UPDATE attendance_log set endTime = "' +endTime+'" WHERE logID="'+logID+'"'
+		self.executeQuery(query,False)
+		logger.info("USER %s SIGNED OUT FROM %s WITH LOGID %s ",user,machine,logID) #debug info
+		return logID
 	def logStart(self, user, machine, major, level):
 		startTime = datetime.datetime.now().strftime('%Y%m%d-%H:%M')
 		userInfo = '","'.join([user, major, level, machine, startTime])
 		userInfo = '"'+userInfo+'"'
-		query = 'INSERT into log (user, major, level, machine, startTime) VALUES (' + userInfo + ')'
+		table = "attendance_log" if machine.startswith("LECTURE") else "log"
+		query = 'INSERT into ' +table+ ' (user, major, level, machine, startTime) VALUES (' + userInfo + ')'
 		logID=self.executeQuery(query,False,True)
 		# query = 'SELECT LAST_INSERT_ID();'#keep the entry ID in a variable to use later
 		# result = self.executeQuery(query)
@@ -1132,7 +1155,8 @@ class DatabaseHandler():
 		result = self.executeQuery(query)
 		logID = str(result[0][0])
 		endTime = (datetime.datetime.now()).strftime('%Y%m%d-%H:%M')
-		query = 'UPDATE log set endTime = "' +endTime+'" WHERE logID="'+logID+'"'
+		table = "attendance_log" if machine.startswith("LECTURE") else "log"
+		query = 'UPDATE ' +table+ ' set endTime = "' +endTime+'" WHERE logID="'+logID+'"'
 		self.executeQuery(query,False)
 		logger.info("LOG UPDATED %s ENDED WITH LOGID %s ",machine,logID) #debug info
 	
@@ -1421,23 +1445,24 @@ class EnvisionServer():
 		#seperate variables for each database. This isn't necessary but makes it explicit which DB operation is being performed
 		self.oecDB = DatabaseHandler(self,"oec") #OECs DB
 		self.envisionDB = DatabaseHandler(self,"envision")#EnVision DB related to machines, classes, and users
-		for attempt in xrange(5):
+		for attempt in xrange(20):
 			try:
-				if self.ps1 not in locals():
+				if 'self.ps1' not in locals():
 					self.ps1 = SmartPowerStrip('192.168.111.11') #PowerStrip-1 TAZ4's and TAZ5
-				if self.ps2 not in locals():
+				if 'self.ps2' not in locals():
 					self.ps2 = SmartPowerStrip('192.168.111.12') #PowerStrip-2 TAZ6's
-				if self.ps3 not in locals():
+				if 'self.ps3' not in locals():
 					self.ps3 = SmartPowerStrip('192.168.111.13') #PowerStrip-3 TAZ_MINI 1-6
-				if self.ps4 not in locals():
+				if 'self.ps4' not in locals():
 					self.ps4 = SmartPowerStrip('192.168.111.14') #PowerStrip-4 TAZ_MINI 7-8
 			except Exception as e:
 				logger.error("KASA Error: %s", e)
 				logger.warning("KASA-STRIP timeout attempt %s, retrying",attempt)
 			else:
 				break
-		except:
+		else:
 			logger.critical("KASA-STRIPS not connecting. SERVER NOT STARTED!")
+			sys.exit(0)
 				
 			
 

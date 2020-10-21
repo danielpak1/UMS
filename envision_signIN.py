@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 
+from __future__ import print_function
 import wx
 import wx.lib.inspection
 from wx.lib.pubsub import pub #used to "listen" for messages sent by spawned GUI windows
@@ -8,6 +9,8 @@ import threading, subprocess, signal #used for threading external programs
 import socket #communicate, via a socket, to external (or local!) server
 import wx.lib.agw.pybusyinfo as PBI
 import os, time, sys #basic OS functions
+import serial
+import paho.mqtt.client as mqtt
 
 #platform check, useful for GUI layout
 if wx.Platform == "__WXMSW__":
@@ -16,8 +19,8 @@ if wx.Platform == "__WXMSW__":
 else:
 	GTK = True
 	MSW = False
-NUMSTUDENTS = 20
-SIZERPAD = 10
+NUMSTUDENTS = 30
+NUMCOLUMNS = 2
 READER_LENGTH = 39
 ASCII_START = 37
 ASCII_END = 63
@@ -25,6 +28,39 @@ IDLENGTH = 10
 MACHINENAME = "LECTURE_ROSTER-IN"
 SERVERADDRESS='envision-local'
 SERVERPORT=6969
+MQTT_SERVER_IP = "envision-local"
+MQTT_PORT = 1883
+MQTT_SIGN_IN_TOPIC   = "envision/front_desk/sign_in"
+
+class MyDialog(wx.Dialog):
+	def __init__(self, parent, banner, msg):
+		#wx.Dialog.__init__(self, parent, wx.ID_ANY, banner, size=wx.DefaultSize, pos=wx.DefaultPosition, style=wx.DEFAULT_DIALOG_STYLE)
+		self.parent = parent
+		pre = wx.PreDialog()
+		pre.Create(parent, wx.ID_ANY, banner, wx.DefaultPosition, wx.DefaultSize, wx.DEFAULT_DIALOG_STYLE)
+		self.PostCreate(pre)
+		sizer = wx.BoxSizer(wx.VERTICAL)
+
+		label = wx.StaticText(self,-1,msg)
+		sizer.Add(label, 1, wx.ALIGN_CENTRE|wx.ALL, 5)
+		btn_sizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
+		sizer.Add(btn_sizer, 1, wx.ALIGN_RIGHT)
+		no_btn = wx.FindWindowById(wx.ID_NO,self)
+		
+		self.Bind(wx.EVT_CLOSE, self.OnClose)
+		self.Bind(wx.EVT_WINDOW_DESTROY, self.OnDestroy)
+		self.SetSizerAndFit(sizer)
+		self.Layout()
+		sizer.Fit(self)
+
+	def OnClose(self, event):
+		print('In OnClose')
+		event.Skip()
+
+	def OnDestroy(self, event):
+		print('In OnDestroy')
+		self.parent.focusPanel.SetFocus()
+		event.Skip()
 
 class SocketThread(threading.Thread):
 	#initializer, takes parent and a message as inputs
@@ -32,6 +68,7 @@ class SocketThread(threading.Thread):
 		threading.Thread.__init__(self)
 		self.parent=parent
 		self.message=message
+		self.runFlag = True #run Flag indicates the thread is still running. Can be called externally to end the thread
 	#called automatically by the start() function (implicitly defined by the threading class)... required
 	def run(self):
 		pass
@@ -114,7 +151,7 @@ class MainWindow(wx.Frame):
 
 		styleFlags = wx.DEFAULT_FRAME_STYLE # | wx.NO_BORDER# | wx.FRAME_NO_TASKBAR
 		if GTK:
-			styleFlags = wx.DEFAULT_FRAME_STYLE | wx.STAY_ON_TOP
+			styleFlags = wx.DEFAULT_FRAME_STYLE# | wx.STAY_ON_TOP
 		wx.Frame.__init__(self, None, title = "EnVision Client Machines", style=styleFlags)
 		
 		#Think I finally fixed the 'need focus' issue by creating a separate, empty panel 
@@ -124,18 +161,13 @@ class MainWindow(wx.Frame):
 		self.focusPanel = wx.Panel(self.panel_1, wx.ID_ANY, style=wx.WANTS_CHARS)
 		
 		self.rows = []
-		self.firstLinePanel = wx.Panel(self.panel_1, wx.ID_ANY)
-		self.firstLineSizer = wx.BoxSizer(wx.HORIZONTAL)
-		self.cellLine = wx.StaticLine(self.firstLinePanel, style=wx.LI_HORIZONTAL)
+		self.columns = []
+		self.firstLineSizers = []
+		self.firstLinePanels = []
+		self.cellLines = []
+		
 		self.hiddenTC = wx.TextCtrl(self.panel_1, wx.ID_ANY, "", style=wx.TE_PROCESS_ENTER)
 		self.hiddenTC.Hide()
-		
-		#establish a listener thread. This allows the GUI to respond to spawned processes. In this case the socket process
-		pub.subscribe(self.socketListener, "socketListener")
-		pub.subscribe(self.sectionListener,"sectionListener")
-		#create a socket instance and start it
-		self.socketWorker = SocketThread(self,None)
-		self.socketWorker.start()
 		
 		for i in xrange(NUMSTUDENTS):
 			self.rows.append(Student(self,i))
@@ -147,22 +179,36 @@ class MainWindow(wx.Frame):
 	def __do_layout(self):
 		#SIZERS
 		self.mainSizer = wx.BoxSizer(wx.VERTICAL)
+		self.columnSizer = wx.BoxSizer(wx.HORIZONTAL)
 		self.mainSizer.Add(self.focusPanel,1,wx.EXPAND|wx.ALL,0)
+		self.mainSizer.Add(self.hiddenTC,1,wx.EXPAND)
+		self.mainSizer.Add(self.columnSizer,1,wx.EXPAND)
 		
-		self.mainSizer.Add(self.firstLinePanel,1,wx.EXPAND|wx.ALL,0)
-		self.firstLineSizer.Add(self.cellLine,10, wx.ALIGN_CENTER_VERTICAL)
-		self.firstLinePanel.SetSizer(self.firstLineSizer)
+		for i in xrange(NUMCOLUMNS):
+			self.columns.append(wx.BoxSizer(wx.VERTICAL))
+			#self.columns.append(wx.StaticBoxSizer(wx.StaticBox(self.panel_1, wx.ID_ANY, ""), wx.VERTICAL))
+			self.columnSizer.Add(self.columns[i],1,wx.EXPAND)
+			self.firstLinePanels.append(wx.Panel(self.panel_1, wx.ID_ANY))
+			self.firstLineSizers.append(wx.BoxSizer(wx.HORIZONTAL))
+			self.cellLines.append(wx.StaticLine(self.firstLinePanels[i], style=wx.LI_HORIZONTAL))
+			self.columns[i].Add(self.firstLinePanels[i],1,wx.EXPAND|wx.ALL,0)
+			self.firstLineSizers[i].Add(self.cellLines[i],10, wx.ALIGN_CENTER_VERTICAL)
+			self.firstLinePanels[i].SetSizer(self.firstLineSizers[i])
 		
 		for row in self.rows:
-			self.mainSizer.Add(row.rowPanel,1,wx.EXPAND|wx.ALL,0)
+			self.columns[row.index%NUMCOLUMNS].Add(row.rowPanel,1,wx.EXPAND|wx.ALL,0)
+			if row.index % NUMCOLUMNS == 0:
+				row.rowSizer.Add(row.signedInButton,1, wx.TOP | wx.BOTTOM, 0)#, wx.ALL | wx.EXPAND,0)
+				row.rowSizer.Add(row.signedOutButton,1, wx.TOP | wx.BOTTOM, 0)#, wx.ALL | wx.EXPAND,0)				
 			row.rowSizer.Add(row.lnameCell, 3, wx.ALIGN_CENTER_VERTICAL, 0)
 			row.rowSizer.Add(row.fnameCell, 2, wx.ALIGN_CENTER_VERTICAL, 0)
 			row.rowSizer.Add(row.pidCell, 2, wx.ALIGN_CENTER_VERTICAL, 0)
 			row.rowSizer.AddStretchSpacer(2)
-			row.rowSizer.Add(row.signedInButton,1, wx.TOP | wx.BOTTOM, 0)#, wx.ALL | wx.EXPAND,0)
-			row.rowSizer.Add(row.signedOutButton,1, wx.TOP | wx.BOTTOM, 0)#, wx.ALL | wx.EXPAND,0)
+			if row.index % NUMCOLUMNS != 0:
+				row.rowSizer.Add(row.signedInButton,1, wx.TOP | wx.BOTTOM, 0)#, wx.ALL | wx.EXPAND,0)
+				row.rowSizer.Add(row.signedOutButton,1, wx.TOP | wx.BOTTOM, 0)#, wx.ALL | wx.EXPAND,0)
 			row.rowPanel.SetSizer(row.rowSizer)
-			self.mainSizer.Add(row.linePanel,1,wx.EXPAND,0)
+			self.columns[row.index%NUMCOLUMNS].Add(row.linePanel,1,wx.EXPAND,0)
 			row.lineSizer.Add(row.cellLine,10, wx.ALIGN_CENTER_VERTICAL)
 			row.linePanel.SetSizer(row.lineSizer)
 			#row.linePanel.SetBackgroundColour('red')
@@ -170,7 +216,6 @@ class MainWindow(wx.Frame):
 				row.rowPanel.SetBackgroundColour('white')
 			else:
 				row.rowPanel.SetBackgroundColour('white')
-		self.mainSizer.Add(self.hiddenTC,1,wx.EXPAND)
 		self.panel_1.SetSizer(self.mainSizer)
 		self.SetMinSize((650,500))
 		self.Layout()
@@ -182,14 +227,25 @@ class MainWindow(wx.Frame):
 		self.focusPanel.Bind(wx.EVT_CHAR,self.onKeyPress)
 		self.focusPanel.SetFocus()
 		self.focusPanel.Bind(wx.EVT_KILL_FOCUS, self.onFocusLost)
+		self.Bind(wx.EVT_CLOSE, self.OnExit)
+		#self.Bind(wx.EVT_WINDOW_MODAL_DIALOG_CLOSED, self.OnClose)
+		#establish a listener thread. This allows the GUI to respond to spawned processes. In this case the socket process
+		pub.subscribe(self.socketListener, "socketListener")
+		pub.subscribe(self.sectionListener,"sectionListener")
+		#create a socket instance and start it
+		self.socketWorker = SocketThread(self,None)
+		self.socketWorker.start()
+		self.lightWorker = LightThread(self)
+		self.lightWorker.start()
 
 	def onFocusLost(self,event):
-		#print "FOCUS LOST!"
-		if self.focusPanel.FindFocus() is None:
-			self.focusPanel.SetFocus()
+		print("FOCUS LOST!")
+		self.focusPanel.SetFocus()
 
 	def OnLoad(self):
-		self.Maximize(True)
+		#self.Maximize(True)
+		self.ShowFullScreen(True)
+		self.lightWorker.light(wx.ID_YES)
 		self.socketWorker.sendEvent(["EVT_CLASSES",MACHINENAME,"False","False"])
 		
 
@@ -197,12 +253,25 @@ class MainWindow(wx.Frame):
 		#for thread in threading.enumerate():
 			#if (not thread.name.upper().startswith("MAIN")):
 				#thread.stop()
+		print("exiting")
+		mqtt_client.disconnect()
+		while (self.socketWorker.is_alive()):
+			print("Killing Socket Thread")
+			time.sleep(5)
+		while (self.lightWorker.is_alive()):
+			print("Killing Light Thread")
+			time.sleep(5)
+		#self.socketWorker.runFlag=False
+		#self.lightWorker.runFlag=False
 		self.Destroy()
+		
+	def OnClose(self,event):
+		print("dialog closed")
 	
 	def onResize(self,newSize):
 		winWidth = newSize.GetSize()[0] #* (2.0/3.0)
 		winHeight = newSize.GetSize()[1] #* (2.0/3.0)
-		print (winHeight, winWidth)
+		print(winHeight, winWidth)
 		if (winWidth > 1 and winHeight > 1):
 			app.__set_bitmaps__(winWidth,winHeight)
 			self.setAllStatus()
@@ -251,6 +320,7 @@ class MainWindow(wx.Frame):
 		else:
 			wx.MessageBox("Please Use The ID-Reader!", "ERROR")
 		#event.Skip()
+		self.focusPanel.SetFocus()
 
 	def idEnter(self, idInput):
 		idList = list(idInput)
@@ -271,7 +341,7 @@ class MainWindow(wx.Frame):
 		for student in self.rows:
 			#print student.pid, self.userIDnumber
 			if student.pid == self.userIDnumber:
-				print student.status
+				print(student.status)
 				if student.status is None:
 					student.signedInButton.SetBitmap(app.bitmaps["green"])
 					student.signedOutButton.SetBitmap(app.bitmaps["red"])
@@ -292,12 +362,10 @@ class MainWindow(wx.Frame):
 			elif row.status == False:
 				row.signedInButton.SetBitmap(app.bitmaps["green"])
 				row.signedOutButton.SetBitmap(app.bitmaps["red"])
-			elif row.status == "True":
+			elif row.status == True:
 				row.signedInButton.SetBitmap(app.bitmaps["green"])
 				row.signedOutButton.SetBitmap(app.bitmaps["green"])
 			row.rowSizer.Layout()
-
-
 
 	def debugTextControl(self):
 		self.focusPanel.Unbind(wx.EVT_CHAR)
@@ -308,6 +376,7 @@ class MainWindow(wx.Frame):
 		self.hiddenTC.SetFocus()
 		self.hiddenTC.Bind(wx.EVT_TEXT_ENTER, self.processTextBox)
 	def processTextBox(self,event):
+		
 		debugString=self.hiddenTC.GetLineText(0)
 		self.hiddenTC.Clear()
 		self.hiddenTC.Hide()
@@ -320,20 +389,24 @@ class MainWindow(wx.Frame):
 		#wx.GetApp().ProcessPendingEvents()
 		self.mainSizer.Layout()
 		self.Layout()
-		self.userIDnumber=debugString
-		self.socketWorker.sendEvent(["EVT_ROSTER",MACHINENAME,self.userIDnumber,str(self.currentSection)])
+		if debugString == "e4ms":
+			self.OnExit(wx.EVT_CLOSE)
+		else:
+			self.userIDnumber=debugString
+			self.socketWorker.sendEvent(["EVT_ROSTER",MACHINENAME,self.userIDnumber,str(self.currentSection)])
 		
 	def sectionListener(self,selected):
-		self.choiceFrame.onExit(wx.EVT_CLOSE)
-		agreeDlg = wx.MessageDialog(self, "I certify that I will: \n- Enforce cleaning protocols; \n- Monitor social distancing and mask usage", "Open Class?", wx.YES_NO | wx.CENTRE | wx.ICON_QUESTION)
+		#self.choiceFrame.onExit(wx.EVT_CLOSE)
+		msg = "I certify that I will: \n\n- Enforce cleaning protocols; \n- Monitor social distancing and mask usage"
+		agreeDlg = MyDialog(self,"Open Class?",msg)
+		agreeDlg.CenterOnScreen()
 		result = agreeDlg.ShowModal()
-		#agreeDlg.Close()
-		#agreeDlg.Destroy()
-		if result == wx.ID_YES:
+		agreeDlg.Destroy()
+		if result == wx.ID_OK:
 			#self.focusPanel.SetFocus()
 			self.currentSection = self.classList[selected]["section_id"]
-			self.socketWorker.sendEvent(["EVT_OPENCLASS",MACHINENAME,"False",self.currentSection])
-		elif result == wx.ID_NO:
+			self.socketWorker.sendEvent(["EVT_OPENCLASS",MACHINENAME,self.userIDnumber,self.currentSection])
+		elif result == wx.ID_CANCEL:
 			pass
 			#self.focusPanel.SetFocus()
 	
@@ -370,9 +443,11 @@ class MainWindow(wx.Frame):
 		try:
 			wx.Yield()
 		except Exception as e:
-			print e
+			print(e)
 	def closeSocket(self):
 		self.busyMsg = None
+		self.focusPanel.SetFocus()
+		
 
 	def socketClosed(self, event, errorMsg):
 		self.Show()
@@ -380,8 +455,9 @@ class MainWindow(wx.Frame):
 		errorMsg = str(errorMsg)
 		errorDlg = wx.MessageDialog(self, "Connection to SERVER failed!\n\n"+errorMsg+"\n\nPlease see an Administrator", "ERROR", wx.OK | wx.ICON_ERROR | wx.CENTER)
 		result = errorDlg.ShowModal()
+		#wx.CallAfter(agreeDlg.EndModal,result)
 		#errorDlg.Close()
-		#errorDlg.Destroy()
+		errorDlg.Destroy()
 		if result == wx.ID_OK:
 			pass
 	#called after the socketlistener determines the packets were properly formed, and were accepted by the server
@@ -395,13 +471,16 @@ class MainWindow(wx.Frame):
 			if infoList[0] == "SUPERVISOR":
 				self.openSection()
 			else:
+				self.lightWorker.light(wx.ID_YES)
 				self.setStatus()
 		elif command == "EVT_OPENCLASS":
+			self.lightWorker.light(wx.ID_YES)
 			self.setRoster(infoList)
 			#print self.classList
 		elif command == "EVT_RESTORE":
 			self.restoreRoster(infoList)
 		elif command == "EVT_CLOSECLASS":
+			self.lightWorker.light(wx.ID_YES)
 			self.resetRoster()
 			self.currentSection = False
 
@@ -412,6 +491,12 @@ class MainWindow(wx.Frame):
 		if command == "EVT_ROSTER":
 			if errorList[0] == "SUPERVISOR":
 				self.closeSection()
+			elif errorList[0] == "NOTENROLLED":
+				self.lightWorker.light(wx.ID_NO)
+				wx.MessageBox("You are not enrolled in this section", "ERROR")
+			elif errorList[0] == "CLOSED":
+				self.lightWorker.light(wx.ID_NO)
+				wx.MessageBox("Only supervisors can open sections", "ERROR")
 		elif command == "EVT_CLASSES":
 			self.currentSection = errorList.pop()
 			self.setClasses(errorList)
@@ -427,10 +512,10 @@ class MainWindow(wx.Frame):
 
 	def setRoster(self,roster):
 		for i,student in enumerate(roster):
-			if i>20:
+			if i>NUMSTUDENTS:
 				break
 			else:
-				studentInfo = student.split(":")
+				studentInfo = student.split("~")
 				self.rows[i].pidCell.SetLabel(studentInfo[0][0]+5*"*"+studentInfo[0][6:])
 				self.rows[i].pid = studentInfo[0]
 				self.rows[i].lnameCell.SetLabel(studentInfo[1].split(",")[0])
@@ -443,10 +528,10 @@ class MainWindow(wx.Frame):
 	def restoreRoster(self,roster):
 		
 		for i,student in enumerate(roster):
-			if i>20:
+			if i>NUMSTUDENTS:
 				break
 			else:
-				studentInfo = student.split(":")
+				studentInfo = student.split("~")
 				self.rows[i].pidCell.SetLabel(studentInfo[0][0]+5*"*"+studentInfo[0][6:])
 				self.rows[i].pid = studentInfo[0]
 				self.rows[i].lnameCell.SetLabel(studentInfo[1].split(",")[0])
@@ -475,131 +560,58 @@ class MainWindow(wx.Frame):
 		self.mainSizer.Layout()
 		self.panel_1.Layout()
 	def openSection(self):
-		self.choiceFrame = choiceFrame(self,self.classList)
-		self.choiceFrame.Show()
+		#self.choiceFrame = choiceFrame(self,self.classList)
+		#results = self.choiceFrame.ShowModal()
+		#self.choiceFrame.MakeModal(True)
+		classChoices = []
+		for section in self.classList:
+			sectionString = "Section: " +section["section_id"] + " -- " + section["course"]+section["number"]+", "+section["startTime"]+"-"+section["endTime"]
+			classChoices.append(sectionString)
+		choiceDlg = wx.SingleChoiceDialog(self,"Please Select Section to Open","Section",classChoices)
+		result = choiceDlg.ShowModal()
+		choiceDlg.Destroy()
+		if result == wx.ID_OK:
+			sectionChoice = choiceDlg.GetSelection()
+			print(sectionChoice)
+			pub.sendMessage("sectionListener", selected=sectionChoice)
 	def closeSection(self):
 		missingStudents = []
 		for student in self.rows:
 			if student.status == False:
+				#check for students that haven't signed out...I'd like to move this check to the Server....maybe?
 				missingStudents.append(", ".join([student.lnameCell.GetLabel(),student.fnameCell.GetLabel()]))
 		if missingStudents:
-			msg = "There are " + str(len(missingStudents)) + " students that have not signed out: \n- " + '\n- '.join(i for i in missingStudents)
-			agreeDlg = wx.MessageDialog(self, msg , "Proceed?", wx.YES_NO | wx.CENTRE | wx.ICON_QUESTION)
+			self.lightWorker.light(wx.ID_NO)
+			msg = "There are\n" + str(len(missingStudents)) + " students that have not signed out: \n- " + '\n- '.join(i for i in missingStudents)
+			agreeDlg = MyDialog(self,"Proceed?",msg)
+			agreeDlg.CenterOnScreen()
 			result = agreeDlg.ShowModal()
-			#agreeDlg.Close()
-			#agreeDlg.Destroy()
-			if result == wx.ID_YES:
+			agreeDlg.Destroy()
+			if result == wx.ID_OK:
 				closeSectionMSG = True
-			elif result == wx.ID_NO:
+			elif result == wx.ID_CANCEL:
 				closeSectionMSG = False
 		else:
 				closeSectionMSG = True
 		if closeSectionMSG:
 			msg = "I certify that: \n\n- All equipment and furniture has been cleaned; \n- All students have cleared the room" 
-			agreeDlg = wx.MessageDialog(self, msg , "Proceed?", wx.YES_NO | wx.CENTRE | wx.ICON_QUESTION)
+			agreeDlg = MyDialog(self,"Proceed?",msg)
+			agreeDlg.CenterOnScreen()
 			result = agreeDlg.ShowModal()
-			#agreeDlg.Close()
-			#agreeDlg.Destroy()
-			if result == wx.ID_YES:
+			agreeDlg.Destroy()
+			if result == wx.ID_OK:
 				self.socketWorker.sendEvent(["EVT_CLOSECLASS",MACHINENAME,self.userIDnumber,self.currentSection])
-			if result == wx.ID_NO:
+			elif result == wx.ID_NO:
 				pass
-		
-class choiceFrame(wx.Frame):
-	def __init__(self,parent,classList):
-		"""Constructor"""
-		wx.Frame.__init__(self, parent, style= wx.STAY_ON_TOP | wx.NO_BORDER | wx.FRAME_NO_TASKBAR | wx.FRAME_FLOAT_ON_PARENT, title="More Time?",size=(400,250))
-		#wx.Dialog.__init__(self,parent,style= wx.STAY_ON_TOP, title = "MORE TIME?", size = (400,200))
-		self.panel = wx.Panel(self,style=wx.SUNKEN_BORDER,size=(400,250))
-		self.parent = parent
-		self.classChoices = []
-		self.message = "Please Select Section To Open"
-		self.choiceMessage = wx.StaticText(self.panel,label=self.message,style=wx.ALIGN_CENTRE_VERTICAL|wx.ST_NO_AUTORESIZE)
-		for section in classList:
-			sectionString = "Section: " +section["section_id"] + " -- " + section["course"]+section["number"]+", "+section["startTime"]+"-"+section["endTime"]
-			self.classChoices.append(sectionString)
-		print self.classChoices
-		self.radioText = 10*"." + "Choose Section" + 10*"."
-		self.__do_layout()
-		self.__set_properties()
-		self.MakeModal(True)
-
-	def __do_layout(self):
-		sizer_1 = wx.BoxSizer(wx.VERTICAL)
-		#self.nameCell = wx.StaticText(self.panel, label="", style=wx.ALIGN_CENTRE_VERTICAL|wx.ST_NO_AUTORESIZE)
-		self.radio_box_1 = wx.RadioBox(self.panel, wx.ID_ANY, "", choices=self.classChoices, majorDimension=1, style=wx.RA_SPECIFY_COLS)
-		self.radio_box_1.SetFocus()
-		self.radio_box_1.SetSelection(0)
-		sizer_1.Add(self.choiceMessage,1, wx.ALIGN_CENTRE_HORIZONTAL)
-		sizer_1.Add(self.radio_box_1, 2, wx.EXPAND, 0)
-		#sizer_1.Add(0,0,1)
-		sizer_1.AddStretchSpacer(1)
-		sizer_2 = wx.BoxSizer(wx.HORIZONTAL)
-		sizer_1.Add(sizer_2, 1, wx.EXPAND, 0)
-		sizer_1.AddStretchSpacer(1)
-
-		sizer_2.AddStretchSpacer(3)
-
-		self.okButton = wx.Button(self.panel, wx.ID_ANY, "PROCEED")
-		sizer_2.Add(self.okButton, 2, 0, 0)
-
-		sizer_2.AddStretchSpacer(1)
-
-		self.cancelButton = wx.Button(self.panel, wx.ID_ANY, "CANCEL")
-		sizer_2.Add(self.cancelButton, 2, 0, 0)
-
-		sizer_2.AddStretchSpacer(3)
-		choiceFont = wx.Font(20,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL)
-		buttonFont = wx.Font(20,wx.FONTFAMILY_SWISS,wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_BOLD)
-		self.radio_box_1.SetFont(choiceFont)
-		self.okButton.SetFont(buttonFont)
-		self.cancelButton.SetFont(buttonFont)
-
-		#self.Bind(wx.EVT_SIZE,self.onResize)
-
-		self.panel.SetSizer(sizer_1)
-		sizer_1.Fit(self)
-		self.SetSize((600, len(self.classChoices)*50+30))
-
-		self.Layout()
-		self.alignToCenter(self)
-
-	def __set_properties(self):
-		self.okButton.Bind(wx.EVT_BUTTON, self.onOK)
-		self.cancelButton.Bind(wx.EVT_BUTTON, self.onExit)
-
-	def alignToCenter(self,window):
-	#set the window dead-center of the screen
-		dw, dh = wx.DisplaySize()
-		w, h = window.GetSize()
-		x = dw/2 - w/2
-		y = dh/2 - h/2
-		window.SetPosition((x,y))
-		#print dw, dh, w, h, x, y	
-
-	def onOK(self,event):
-		#self.radio_box_1.GetString(self.radio_box_1.GetSelection())
-		#sectionChoice = self.radio_box_1.GetStringSelection()
-		sectionChoice = self.radio_box_1.GetSelection()
-		print sectionChoice
-		pub.sendMessage("sectionListener", selected=sectionChoice)
-		###maybe send index so I can use my classList / dict
-	def onExit(self,event):
-	#when the timer has ended (by user or countdown), stop the timer; destroy the frame; "stop" the thread using the stop function
-		#self.EndModal(0)
-		self.MakeModal(False)
-		self.Destroy()
-		self.parent.focusPanel.SetFocus()
 		
 class MyApp(wx.App):
 	def OnInit(self):
 		self.bitmaps = {}
-		self.rows = NUMSTUDENTS
+		self.rows = NUMSTUDENTS / NUMCOLUMNS
 		self.totalWidth = 100
 		self.nameWidth = 80
 		self.buttonWidth = self.totalWidth - self.nameWidth
-		self.rowPadding = 8
-		self.printerFontSize = 10
+		self.rowPadding = 10
 		self.__set_bitmaps__()
 		return True
 	
@@ -640,7 +652,43 @@ class MyApp(wx.App):
 		self.bitmaps = {"gray":bitmaps[2], "green":bitmaps[1], "red":bitmaps[0]}
 # end of class MyApp
 
+#thread to run the light towers
+class LightThread(threading.Thread):
+	#initializer function that takes a parent and user selection value as input
+	def __init__(self,parent):
+		threading.Thread.__init__(self)
+		self.parent = parent
+		self.response=None
+		self.runFlag = True #run Flag indicates the thread is still running. Can be called externally to end the thread
+	#not needed but may add functionality in the future
+	def stop(self):
+		pass
+	#required function by threading.start(), light() is redundant but may add some future-proofing
+	def run(self):
+		pass
+	#function to turn the specified light on and off 
+	def light(self,value):
+		if value == wx.ID_YES:
+			try:
+				mqtt_client.publish(MQTT_SIGN_IN_TOPIC, "<OK>");
+				#pass
+			except:
+				print("[MQTT Client]: MQTT Publish Failed")
+		elif value == wx.ID_NO:
+			try:
+				mqtt_client.publish(MQTT_SIGN_IN_TOPIC, "<DENY>");
+				#pass
+			except:
+				print("[MQTT Client]: MQTT Publish Failed")
+
 if __name__ == "__main__":
+	mqtt_client = mqtt.Client()
+	mqtt_client.on_connect = lambda client, userdata, flags, rc: print("MQTT connected to IP " + MQTT_SERVER_IP)
+	try:
+		mqtt_client.connect(MQTT_SERVER_IP, MQTT_PORT, 5)
+		mqtt_client.loop_start();
+	except:
+		print("[MQTT Client]: Connection to MQTT client failed, proceeding w/o MQTT functionality")
 	app = MyApp(0)
 	app.frame = MainWindow()
 	app.frame.Show()
